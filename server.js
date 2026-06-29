@@ -3,8 +3,12 @@ require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const crypto = require("crypto");
+const path = require("path");
 
 const app = express();
+
+app.use("/labels", express.static(path.join(__dirname, "labels")));
+
 app.use(express.json({ limit: "10mb" }));
 
 const {
@@ -84,13 +88,17 @@ async function callBaseLinker(method, parameters = {}) {
   form.append("method", method);
   form.append("parameters", JSON.stringify(parameters));
 
-  const response = await axios.post("https://api.baselinker.com/connector.php", form, {
-    headers: {
-      "X-BLToken": BASELINKER_TOKEN,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    timeout: 30000,
-  });
+  const response = await axios.post(
+    "https://api.baselinker.com/connector.php",
+    form,
+    {
+      headers: {
+        "X-BLToken": BASELINKER_TOKEN,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      timeout: 30000,
+    }
+  );
 
   return response.data;
 }
@@ -481,6 +489,9 @@ async function findBaseOrderByPo(po) {
 app.get("/", (req, res) => {
   res.send(`
     <h2>Temu return_label app működik.</h2>
+
+    <p>PDF címkék:</p>
+    <code>/labels/PO-090-12329685781113212-3016356633-A7_on_A7.pdf</code>
 
     <p>Token teszt:</p>
     <code>/temu/token-info</code>
