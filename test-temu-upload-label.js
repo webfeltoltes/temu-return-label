@@ -108,40 +108,76 @@ async function uploadGeneralFileDirect(filePath) {
 
   const uploadAttempts = [
     {
-      name: "direct_general_file_form_params_file",
+      name: "general_file_file_form_timestamp_ms",
       url: `${baseUrl}/api/galerie/general_file`,
       fileField: "file",
       paramsPlacement: "form",
+      timestampMode: "ms",
+      includeAccessToken: true,
+      includeDataType: false,
     },
     {
-      name: "direct_general_file_query_params_file",
+      name: "general_file_file_query_timestamp_ms",
       url: `${baseUrl}/api/galerie/general_file`,
       fileField: "file",
       paramsPlacement: "query",
+      timestampMode: "ms",
+      includeAccessToken: true,
+      includeDataType: false,
     },
     {
-      name: "direct_general_file_upload_form_params_file",
+      name: "general_file_file_form_timestamp_ms_with_data_type",
+      url: `${baseUrl}/api/galerie/general_file`,
+      fileField: "file",
+      paramsPlacement: "form",
+      timestampMode: "ms",
+      includeAccessToken: true,
+      includeDataType: true,
+    },
+    {
+      name: "general_file_file_query_timestamp_ms_with_data_type",
+      url: `${baseUrl}/api/galerie/general_file`,
+      fileField: "file",
+      paramsPlacement: "query",
+      timestampMode: "ms",
+      includeAccessToken: true,
+      includeDataType: true,
+    },
+    {
+      name: "general_file_file_form_timestamp_seconds",
+      url: `${baseUrl}/api/galerie/general_file`,
+      fileField: "file",
+      paramsPlacement: "form",
+      timestampMode: "seconds",
+      includeAccessToken: true,
+      includeDataType: false,
+    },
+    {
+      name: "general_file_file_query_timestamp_seconds",
+      url: `${baseUrl}/api/galerie/general_file`,
+      fileField: "file",
+      paramsPlacement: "query",
+      timestampMode: "seconds",
+      includeAccessToken: true,
+      includeDataType: false,
+    },
+    {
+      name: "general_file_upload_file_form_timestamp_ms",
       url: `${baseUrl}/api/galerie/general_file/upload`,
       fileField: "file",
       paramsPlacement: "form",
+      timestampMode: "ms",
+      includeAccessToken: true,
+      includeDataType: false,
     },
     {
-      name: "direct_general_file_upload_query_params_file",
+      name: "general_file_upload_file_query_timestamp_ms",
       url: `${baseUrl}/api/galerie/general_file/upload`,
       fileField: "file",
       paramsPlacement: "query",
-    },
-    {
-      name: "direct_general_file_form_params_uploadFile",
-      url: `${baseUrl}/api/galerie/general_file`,
-      fileField: "uploadFile",
-      paramsPlacement: "form",
-    },
-    {
-      name: "direct_general_file_query_params_uploadFile",
-      url: `${baseUrl}/api/galerie/general_file`,
-      fileField: "uploadFile",
-      paramsPlacement: "query",
+      timestampMode: "ms",
+      includeAccessToken: true,
+      includeDataType: false,
     },
   ];
 
@@ -149,12 +185,23 @@ async function uploadGeneralFileDirect(filePath) {
     console.log("File upload próba:", attempt.name);
     console.log("URL:", attempt.url);
 
+    const timestamp =
+      attempt.timestampMode === "ms"
+        ? Date.now()
+        : Math.floor(Date.now() / 1000);
+
     const params = {
       app_key: TEMU_APP_KEY,
-      access_token: TEMU_ACCESS_TOKEN,
-      timestamp: Math.floor(Date.now() / 1000),
-      data_type: "JSON",
+      timestamp,
     };
+
+    if (attempt.includeAccessToken) {
+      params.access_token = TEMU_ACCESS_TOKEN;
+    }
+
+    if (attempt.includeDataType) {
+      params.data_type = "JSON";
+    }
 
     params.sign = makeSign(params, TEMU_APP_SECRET);
 
@@ -362,12 +409,12 @@ function buildReturnLabelPayloadVariants(fileValue, returnWarehouseId) {
         },
       },
     },
-  ].filter((variant) => {
-    if (variant.payload.returnWarehouseId === undefined) {
+  ].map((variant) => {
+    if (!variant.payload.returnWarehouseId) {
       delete variant.payload.returnWarehouseId;
     }
 
-    return true;
+    return variant;
   });
 }
 
@@ -429,7 +476,9 @@ async function main() {
 
   if (!fileValue) {
     console.log("Nem találtam file azonosítót / URL-t a Temu upload válaszban.");
-    console.log("Ha minden upload próba hibás, akkor a Temu file upload endpoint pontos URL-je / jogosultsága hiányzik.");
+    console.log(
+      "Ha minden upload próba hibás, akkor a Temu file upload endpoint pontos URL-je / jogosultsága hiányzik."
+    );
     return;
   }
 
