@@ -244,6 +244,41 @@ const uploadVariants = [
       ],
     },
   },
+{
+    name: "variant_7_request_wrapper_base",
+    payload: {
+      request: {
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [baseDtoNumberCarrier],
+      },
+    },
+  },
+  {
+    name: "variant_8_request_wrapper_pickup_mode_3_latest_ms",
+    payload: {
+      request: {
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        pickUpTimeScheduleMode: 3,
+        latestTimestamp: in7DaysMs,
+        returnLabelDTOList: [baseDtoNumberCarrier],
+      },
+    },
+  },
+  {
+    name: "variant_9_request_wrapper_pickup_mode_1_start_end_ms",
+    payload: {
+      request: {
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        pickUpTimeScheduleMode: 1,
+        startTimestamp: in1DayMs,
+        endTimestamp: in7DaysMs,
+        returnLabelDTOList: [baseDtoNumberCarrier],
+      },
+    },
+  },
 ];
 
 for (const variant of uploadVariants) {
