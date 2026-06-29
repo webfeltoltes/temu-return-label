@@ -166,8 +166,9 @@ const baseDtoStringCarrier = {
   trackingNumber: TRACKING_NUMBER,
 };
 
-const now = Math.floor(Date.now() / 1000);
-const in7Days = now + 7 * 24 * 60 * 60;
+const nowMs = Date.now();
+const in1DayMs = nowMs + 1 * 24 * 60 * 60 * 1000;
+const in7DaysMs = nowMs + 7 * 24 * 60 * 60 * 1000
 
 const uploadVariants = [
   {
@@ -179,43 +180,68 @@ const uploadVariants = [
     },
   },
   {
-    name: "variant_2_latest_number_carrier",
+    name: "variant_2_pickup_mode_3_latest_ms",
     payload: {
       parentAfterSalesSn: PARENT_AFTER_SALES_SN,
       parentOrderSn: PARENT_ORDER_SN,
-      latestTimestamp: in7Days,
+      pickUpTimeScheduleMode: 3,
+      latestTimestamp: in7DaysMs,
       returnLabelDTOList: [baseDtoNumberCarrier],
     },
   },
   {
-    name: "variant_3_string_carrier",
-    payload: {
-      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-      parentOrderSn: PARENT_ORDER_SN,
-      latestTimestamp: in7Days,
-      returnLabelDTOList: [baseDtoStringCarrier],
-    },
-  },
-  {
-    name: "variant_4_pickup_mode_1",
+    name: "variant_3_pickup_mode_1_start_end_ms",
     payload: {
       parentAfterSalesSn: PARENT_AFTER_SALES_SN,
       parentOrderSn: PARENT_ORDER_SN,
       pickUpTimeScheduleMode: 1,
-      latestTimestamp: in7Days,
+      startTimestamp: in1DayMs,
+      endTimestamp: in7DaysMs,
       returnLabelDTOList: [baseDtoNumberCarrier],
     },
   },
   {
-    name: "variant_5_pickup_start_end",
+    name: "variant_4_with_pickup_certificate",
+    payload: {
+      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+      parentOrderSn: PARENT_ORDER_SN,
+      returnLabelDTOList: [
+        {
+          ...baseDtoNumberCarrier,
+          pickUpCertificateImageUrl: returnLabelUrl,
+        },
+      ],
+    },
+  },
+  {
+    name: "variant_5_pickup_mode_3_latest_ms_with_certificate",
+    payload: {
+      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+      parentOrderSn: PARENT_ORDER_SN,
+      pickUpTimeScheduleMode: 3,
+      latestTimestamp: in7DaysMs,
+      returnLabelDTOList: [
+        {
+          ...baseDtoNumberCarrier,
+          pickUpCertificateImageUrl: returnLabelUrl,
+        },
+      ],
+    },
+  },
+  {
+    name: "variant_6_pickup_mode_1_start_end_ms_with_certificate",
     payload: {
       parentAfterSalesSn: PARENT_AFTER_SALES_SN,
       parentOrderSn: PARENT_ORDER_SN,
       pickUpTimeScheduleMode: 1,
-      startTimestamp: now + 24 * 60 * 60,
-      endTimestamp: in7Days,
-      latestTimestamp: in7Days,
-      returnLabelDTOList: [baseDtoNumberCarrier],
+      startTimestamp: in1DayMs,
+      endTimestamp: in7DaysMs,
+      returnLabelDTOList: [
+        {
+          ...baseDtoNumberCarrier,
+          pickUpCertificateImageUrl: returnLabelUrl,
+        },
+      ],
     },
   },
 ];
