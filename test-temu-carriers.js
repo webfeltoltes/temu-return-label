@@ -76,35 +76,37 @@ async function callTemu(type, payload = {}) {
   return response.data;
 }
 
-function collectPossibleCarrierRows(obj, rows = []) {
+function collectRows(obj, rows = []) {
   if (!obj || typeof obj !== "object") return rows;
 
   if (Array.isArray(obj)) {
     for (const item of obj) {
-      collectPossibleCarrierRows(item, rows);
+      collectRows(item, rows);
     }
 
     return rows;
   }
 
   const keys = Object.keys(obj);
-  const joined = JSON.stringify(obj).toLowerCase();
+  const text = JSON.stringify(obj).toLowerCase();
 
-  const looksLikeCarrier =
-    joined.includes("packeta") ||
-    joined.includes("zasilkovna") ||
-    joined.includes("zásilkovna") ||
-    joined.includes("packet") ||
-    joined.includes("carrier") ||
-    joined.includes("logistics");
+  const looksUseful =
+    text.includes("packeta") ||
+    text.includes("zasilkovna") ||
+    text.includes("zásilkovna") ||
+    text.includes("packet") ||
+    text.includes("carrier") ||
+    text.includes("logistics") ||
+    text.includes("provider") ||
+    text.includes("service");
 
-  if (looksLikeCarrier && keys.length <= 20) {
+  if (looksUseful && keys.length <= 30) {
     rows.push(obj);
   }
 
   for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
-      collectPossibleCarrierRows(value, rows);
+      collectRows(value, rows);
     }
   }
 
@@ -117,41 +119,144 @@ async function main() {
   console.log("parentAfterSalesSn:", PARENT_AFTER_SALES_SN);
   console.log("----------");
 
+  console.log("1. Return label prepare lekérés...");
+
+  const prepareResponse = await callTemu(
+    "temu.aftersales.returnlabel.prepare.get",
+    {
+      parentOrderSn: PARENT_ORDER_SN,
+      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+    }
+  );
+
+  console.log(JSON.stringify(prepareResponse, null, 2));
+  console.log("----------");
+
+  const returnWarehouseId =
+    prepareResponse?.result?.availableReturnWarehouseList?.[0]?.warehouseId ||
+    null;
+
+  console.log("returnWarehouseId:", returnWarehouseId || "-");
+  console.log("----------");
+
   const payloadVariants = [
     {
-      name: "empty",
-      payload: {},
-    },
-    {
-      name: "with_parent_order",
+      name: "returnWarehouseId_only",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
+        returnWarehouseId,
       },
     },
     {
-      name: "with_aftersales",
+      name: "warehouseId_only",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        warehouseId: returnWarehouseId,
       },
     },
     {
-      name: "with_country_hu",
+      name: "returnWarehouseId_with_order",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+      },
+    },
+    {
+      name: "warehouseId_with_order",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        warehouseId: returnWarehouseId,
+      },
+    },
+    {
+      name: "returnWarehouseId_country_hu",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
         countryCode: "HU",
       },
     },
     {
-      name: "with_region_hu",
+      name: "warehouseId_country_hu",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        warehouseId: returnWarehouseId,
+        countryCode: "HU",
+      },
+    },
+    {
+      name: "returnWarehouseId_region_hu",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
         regionCode: "HU",
       },
     },
-  ];
+    {
+      name: "warehouseId_region_hu",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        warehouseId: returnWarehouseId,
+        regionCode: "HU",
+      },
+    },
+    {
+      name: "returnWarehouseId_destinationCountryCode",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+        destinationCountryCode: "HU",
+      },
+    },
+    {
+      name: "warehouseId_destinationCountryCode",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        warehouseId: returnWarehouseId,
+        destinationCountryCode: "HU",
+      },
+    },
+    {
+      name: "returnWarehouseId_returnCountryCode",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+        returnCountryCode: "HU",
+      },
+    },
+    {
+      name: "warehouseId_returnCountryCode",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        warehouseId: returnWarehouseId,
+        returnCountryCode: "HU",
+      },
+    },
+  ].map((variant) => {
+    const cleanedPayload = {};
+
+    for (const [key, value] of Object.entries(variant.payload)) {
+      if (value !== null && value !== undefined && value !== "") {
+        cleanedPayload[key] = value;
+      }
+    }
+
+    return {
+      name: variant.name,
+      payload: cleanedPayload,
+    };
+  });
+
+  console.log("2. Carrier lista próbák...");
+  console.log("----------");
 
   for (const variant of payloadVariants) {
     console.log("Próba:", variant.name);
@@ -167,11 +272,15 @@ async function main() {
       console.log("Válasz:");
       console.log(JSON.stringify(response, null, 2));
 
-      const possibleRows = collectPossibleCarrierRows(response);
+      const rows = collectRows(response);
 
-      if (possibleRows.length > 0) {
+      if (rows.length > 0) {
         console.log("Lehetséges carrier sorok:");
-        console.log(JSON.stringify(possibleRows, null, 2));
+        console.log(JSON.stringify(rows, null, 2));
+      }
+
+      if (response?.success === true || response?.errorCode === 1000000) {
+        console.log("SIKERES carrier.get változat:", variant.name);
       }
 
       console.log("----------");
