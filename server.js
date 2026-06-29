@@ -12,6 +12,7 @@ const {
   TEMU_APP_SECRET,
   TEMU_ACCESS_TOKEN,
   TEMU_API_URL = "https://openapi-b-eu.temu.com/openapi/router",
+  BASELINKER_TOKEN,
   PORT = 3000,
 } = process.env;
 
@@ -67,6 +68,26 @@ async function callTemu(type, payload = {}, accessToken = TEMU_ACCESS_TOKEN) {
   const response = await axios.post(TEMU_API_URL, params, {
     headers: {
       "content-type": "application/json",
+    },
+    timeout: 30000,
+  });
+
+  return response.data;
+}
+
+async function callBaseLinker(method, parameters = {}) {
+  if (!BASELINKER_TOKEN) {
+    throw new Error("Hiányzik a BASELINKER_TOKEN a .env fájlból.");
+  }
+
+  const form = new URLSearchParams();
+  form.append("method", method);
+  form.append("parameters", JSON.stringify(parameters));
+
+  const response = await axios.post("https://api.baselinker.com/connector.php", form, {
+    headers: {
+      "X-BLToken": BASELINKER_TOKEN,
+      "Content-Type": "application/x-www-form-urlencoded",
     },
     timeout: 30000,
   });
@@ -330,6 +351,103 @@ function extractShippingFields(shippingInfo) {
   };
 }
 
+function objectContainsText(obj, searchText) {
+  if (!obj || !searchText) return false;
+
+  const json = JSON.stringify(obj).toLowerCase();
+  return json.includes(searchText.toLowerCase());
+}
+
+function extractBaseOrderData(order) {
+  return {
+    order_id: order.order_id,
+    shop_order_id: order.shop_order_id,
+    external_order_id: order.external_order_id,
+    order_source: order.order_source,
+    order_source_id: order.order_source_id,
+    order_source_info: order.order_source_info,
+    date_add: order.date_add,
+    date_confirmed: order.date_confirmed,
+    order_status_id: order.order_status_id,
+
+    email: order.email || null,
+    phone: order.phone || null,
+
+    delivery_fullname: order.delivery_fullname || null,
+    delivery_company: order.delivery_company || null,
+    delivery_address: order.delivery_address || null,
+    delivery_city: order.delivery_city || null,
+    delivery_postcode: order.delivery_postcode || null,
+    delivery_country: order.delivery_country || null,
+    delivery_country_code: order.delivery_country_code || null,
+
+    invoice_fullname: order.invoice_fullname || null,
+    invoice_company: order.invoice_company || null,
+    invoice_address: order.invoice_address || null,
+    invoice_city: order.invoice_city || null,
+    invoice_postcode: order.invoice_postcode || null,
+    invoice_country: order.invoice_country || null,
+    invoice_country_code: order.invoice_country_code || null,
+
+    currency: order.currency || null,
+    payment_method: order.payment_method || null,
+    delivery_method: order.delivery_method || null,
+    paid: order.paid || null,
+
+    user_comments: order.user_comments || null,
+    admin_comments: order.admin_comments || null,
+    extra_field_1: order.extra_field_1 || null,
+    extra_field_2: order.extra_field_2 || null,
+    custom_extra_fields: order.custom_extra_fields || null,
+
+    products: order.products || [],
+  };
+}
+
+async function findBaseOrderByPo(po) {
+  const now = Math.floor(Date.now() / 1000);
+  const daysBack = 120;
+  const dateFrom = now - daysBack * 24 * 60 * 60;
+
+  const attempts = [];
+
+  const orderSourcesResult = await callBaseLinker("getOrderSources", {});
+  attempts.push({
+    method: "getOrderSources",
+    result: orderSourcesResult,
+  });
+
+  const ordersResult = await callBaseLinker("getOrders", {
+    date_confirmed_from: dateFrom,
+    get_unconfirmed_orders: true,
+  });
+
+  attempts.push({
+    method: "getOrders",
+    parameters: {
+      date_confirmed_from: dateFrom,
+      get_unconfirmed_orders: true,
+    },
+    returnedCount: ordersResult?.orders?.length || 0,
+  });
+
+  const orders = ordersResult?.orders || [];
+
+  const matchedOrders = orders.filter((order) => objectContainsText(order, po));
+
+  return {
+    success: true,
+    po,
+    dateFrom,
+    checkedOrders: orders.length,
+    matchedCount: matchedOrders.length,
+    matchedOrders: matchedOrders.map(extractBaseOrderData),
+    debug: {
+      attempts,
+    },
+  };
+}
+
 app.get("/", (req, res) => {
   res.send(`
     <h2>Temu return_label app működik.</h2>
@@ -343,14 +461,11 @@ app.get("/", (req, res) => {
     <p>Aftersales részletek:</p>
     <code>/temu/aftersales-detail?parentOrderSn=PO-090-12329685781113212&parentAfterSalesSn=PO-090-12329685781113212-D01</code>
 
-    <p>Order detail V2:</p>
-    <code>/temu/order-detail?parentOrderSn=PO-090-12329685781113212</code>
-
-    <p>Shipping info / decrypt teszt:</p>
-    <code>/temu/shipping-info?parentOrderSn=PO-090-12329685781113212</code>
-
-    <p>Packeta adat teszt:</p>
+    <p>Temu Packeta adat teszt:</p>
     <code>/temu/packeta-data?parentOrderSn=PO-090-12329685781113212&parentAfterSalesSn=PO-090-12329685781113212-D01</code>
+
+    <p>BaseLinker PO keresés:</p>
+    <code>/base/find-order?po=PO-090-12329685781113212</code>
 
     <p>Webhook endpoint:</p>
     <code>/temu/webhook</code>
@@ -638,16 +753,6 @@ app.get("/temu/packeta-data", async (req, res) => {
         isPhoneMasked: shippingFields.isPhoneMasked,
         isNameMasked: shippingFields.isNameMasked,
       },
-      shippingAddressDebug: {
-        country: shippingFields.country,
-        county: shippingFields.county,
-        city: shippingFields.city,
-        postCode: shippingFields.postCode,
-        addressLineAll: shippingFields.addressLineAll,
-        addressLine1: shippingFields.addressLine1,
-        addressLine2: shippingFields.addressLine2,
-        addressLine3: shippingFields.addressLine3,
-      },
       debug: {
         refundSource: refund.source,
         afterSalesSuccess: afterSalesDetail.success,
@@ -669,6 +774,36 @@ app.get("/temu/packeta-data", async (req, res) => {
 
     res.status(500).json({
       message: "Packeta adat összeállítás hiba.",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/base/find-order", async (req, res) => {
+  try {
+    const po = req.query.po;
+
+    if (!po) {
+      return res.status(400).json({
+        message: "Hiányzik a po paraméter.",
+        example: "/base/find-order?po=PO-090-12329685781113212",
+      });
+    }
+
+    const result = await findBaseOrderByPo(po);
+
+    res.json(result);
+  } catch (error) {
+    if (error.response) {
+      return res.status(500).json({
+        message: "BaseLinker rendelés keresés hiba.",
+        status: error.response.status,
+        data: error.response.data,
+      });
+    }
+
+    res.status(500).json({
+      message: "BaseLinker rendelés keresés hiba.",
       error: error.message,
     });
   }
