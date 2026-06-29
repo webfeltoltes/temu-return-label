@@ -15,6 +15,18 @@ const {
   PORT = 3000,
 } = process.env;
 
+function signValue(value) {
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
 function makeSign(params, appSecret) {
   const sortedKeys = Object.keys(params)
     .filter((key) => {
@@ -26,7 +38,7 @@ function makeSign(params, appSecret) {
   let signStr = appSecret;
 
   for (const key of sortedKeys) {
-    signStr += key + params[key];
+    signStr += key + signValue(params[key]);
   }
 
   signStr += appSecret;
