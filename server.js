@@ -5,10 +5,12 @@ const axios = require("axios");
 const crypto = require("crypto");
 
 const app = express();
+app.use(express.json({ limit: "10mb" }));
 
 const {
   TEMU_APP_KEY,
   TEMU_APP_SECRET,
+  TEMU_ACCESS_TOKEN,
   TEMU_API_URL = "https://openapi-b-eu.temu.com/openapi/router",
   PORT = 3000,
 } = process.env;
@@ -36,7 +38,7 @@ function makeSign(params, appSecret) {
     .toUpperCase();
 }
 
-async function callTemu(type, payload = {}, accessToken) {
+async function callTemu(type, payload = {}, accessToken = TEMU_ACCESS_TOKEN) {
   const timestamp = Math.floor(Date.now() / 1000).toString();
 
   const params = {
@@ -62,9 +64,13 @@ async function callTemu(type, payload = {}, accessToken) {
 
 app.get("/", (req, res) => {
   res.send(`
-    <h2>Temu return_label auth app működik.</h2>
+    <h2>Temu return_label app működik.</h2>
+    <p>Token teszt:</p>
+    <code>/temu/token-info</code>
     <p>Callback URL:</p>
     <code>/temu/callback?code=TESZT</code>
+    <p>Webhook endpoint:</p>
+    <code>/temu/webhook</code>
   `);
 });
 
@@ -114,6 +120,44 @@ app.get("/temu/callback", async (req, res) => {
       error: error.message,
     });
   }
+});
+
+app.get("/temu/token-info", async (req, res) => {
+  try {
+    const result = await callTemu("bg.open.accesstoken.info.get");
+
+    res.json(result);
+  } catch (error) {
+    console.error("Token info hiba:");
+
+    if (error.response) {
+      console.error("HTTP status:", error.response.status);
+      console.dir(error.response.data, { depth: null });
+
+      return res.status(500).json({
+        message: "Temu token info hiba.",
+        status: error.response.status,
+        data: error.response.data,
+      });
+    }
+
+    console.error(error.message);
+
+    res.status(500).json({
+      message: "Temu token info hiba.",
+      error: error.message,
+    });
+  }
+});
+
+app.post("/temu/webhook", async (req, res) => {
+  console.log("Temu webhook érkezett");
+  console.log("Headers:", req.headers);
+  console.log("Body:", req.body);
+
+  res.status(200).json({
+    result: {},
+  });
 });
 
 app.listen(PORT, () => {
