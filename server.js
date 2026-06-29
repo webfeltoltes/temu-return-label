@@ -74,36 +74,90 @@ async function callTemu(type, payload = {}, accessToken = TEMU_ACCESS_TOKEN) {
   return response.data;
 }
 
-function findFirstValueByKeyDeep(obj, keyNames) {
+function isEmail(value) {
+  if (typeof value !== "string") return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function isPhoneLike(value) {
+  if (typeof value !== "string") return false;
+
+  const cleaned = value.replace(/[^\d+]/g, "");
+
+  if (cleaned.length < 7) return false;
+  if (cleaned.length > 20) return false;
+
+  return true;
+}
+
+function findEmailDeep(obj) {
   if (!obj || typeof obj !== "object") return null;
 
   for (const [key, value] of Object.entries(obj)) {
     const normalizedKey = key.toLowerCase();
 
-    if (keyNames.some((k) => normalizedKey.includes(k.toLowerCase()))) {
-      if (value !== null && value !== undefined && value !== "") {
-        return value;
-      }
+    if (
+      (normalizedKey.includes("email") || normalizedKey.includes("mail")) &&
+      isEmail(value)
+    ) {
+      return value.trim();
     }
 
     if (typeof value === "object") {
-      const found = findFirstValueByKeyDeep(value, keyNames);
-      if (found !== null && found !== undefined && found !== "") {
-        return found;
-      }
+      const found = findEmailDeep(value);
+      if (found) return found;
     }
   }
 
   return null;
 }
 
+function findPhoneDeep(obj) {
+  if (!obj || typeof obj !== "object") return null;
+
+  for (const [key, value] of Object.entries(obj)) {
+    const normalizedKey = key.toLowerCase();
+
+    if (
+      (normalizedKey.includes("phone") ||
+        normalizedKey.includes("mobile") ||
+        normalizedKey.includes("tel")) &&
+      isPhoneLike(value)
+    ) {
+      return value.trim();
+    }
+
+    if (typeof value === "object") {
+      const found = findPhoneDeep(value);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function normalizeTemuAmount(amount) {
+  if (amount === null || amount === undefined) return null;
+
+  const numericAmount = Number(amount);
+
+  if (Number.isNaN(numericAmount)) return amount;
+
+  return {
+    raw: numericAmount,
+    dividedBy100: numericAmount / 100,
+  };
+}
+
 function getRefundAmount(afterSalesDetailResult) {
   const result = afterSalesDetailResult?.result || {};
 
   const buyerTotalRefund = result?.refundSummary?.buyerTotalRefund;
+
   if (buyerTotalRefund?.amount !== undefined) {
     return {
-      value: buyerTotalRefund.amount,
+      valueRaw: buyerTotalRefund.amount,
+      valueDividedBy100: normalizeTemuAmount(buyerTotalRefund.amount)?.dividedBy100,
       currency: buyerTotalRefund.currency || null,
       source: "refundSummary.buyerTotalRefund",
     };
@@ -114,16 +168,71 @@ function getRefundAmount(afterSalesDetailResult) {
 
   if (applyRefundAmount?.amount !== undefined) {
     return {
-      value: applyRefundAmount.amount,
+      valueRaw: applyRefundAmount.amount,
+      valueDividedBy100: normalizeTemuAmount(applyRefundAmount.amount)?.dividedBy100,
       currency: applyRefundAmount.currency || null,
       source: "afterSalesList[0].applyRefundAmount",
     };
   }
 
   return {
-    value: null,
+    valueRaw: null,
+    valueDividedBy100: null,
     currency: null,
     source: null,
+  };
+}
+
+async function getOrderDetailV2(parentOrderSn) {
+  const attempts = [];
+
+  const attempt1 = await callTemu("bg.order.detail.v2.get", {
+    parentOrderSn,
+    fulfillmentTypeList: ["fulfillBySeller"],
+  });
+
+  attempts.push({
+    type: "bg.order.detail.v2.get",
+    mode: "top-level",
+    response: attempt1,
+  });
+
+  if (attempt1.success) {
+    return {
+      success: true,
+      usedMode: "top-level",
+      result: attempt1,
+      attempts,
+    };
+  }
+
+  const attempt2 = await callTemu("bg.order.detail.v2.get", {
+    request: {
+      parentOrderSn,
+      fulfillmentTypeList: ["fulfillBySeller"],
+    },
+  });
+
+  attempts.push({
+    type: "bg.order.detail.v2.get",
+    mode: "request-wrapper",
+    response: attempt2,
+  });
+
+  if (attempt2.success) {
+    return {
+      success: true,
+      usedMode: "request-wrapper",
+      result: attempt2,
+      attempts,
+    };
+  }
+
+  return {
+    success: false,
+    usedMode: null,
+    result: attempt2,
+    attempts,
   };
 }
 
@@ -140,14 +249,11 @@ app.get("/", (req, res) => {
     <p>Aftersales részletek:</p>
     <code>/temu/aftersales-detail?parentOrderSn=PO-090-12329685781113212&parentAfterSalesSn=PO-090-12329685781113212-D01</code>
 
-    <p>Order detail:</p>
+    <p>Order detail V2:</p>
     <code>/temu/order-detail?parentOrderSn=PO-090-12329685781113212</code>
 
     <p>Packeta adat teszt:</p>
     <code>/temu/packeta-data?parentOrderSn=PO-090-12329685781113212&parentAfterSalesSn=PO-090-12329685781113212-D01</code>
-
-    <p>Callback URL:</p>
-    <code>/temu/callback?code=TESZT</code>
 
     <p>Webhook endpoint:</p>
     <code>/temu/webhook</code>
@@ -161,9 +267,6 @@ app.get("/temu/callback", async (req, res) => {
     return res.status(400).send("Nincs code paraméter az URL-ben.");
   }
 
-  console.log("Temu authorization code érkezett:");
-  console.log(code);
-
   try {
     const result = await callTemu(
       "bg.open.accesstoken.create",
@@ -171,29 +274,19 @@ app.get("/temu/callback", async (req, res) => {
       code
     );
 
-    console.log("Access token válasz:");
-    console.dir(result, { depth: null });
-
     res.json({
       message: "Sikeres Temu authorization callback.",
       note: "Az accessToken értéket mentsd el biztonságosan.",
       result,
     });
   } catch (error) {
-    console.error("Token lekérés hiba:");
-
     if (error.response) {
-      console.error("HTTP status:", error.response.status);
-      console.dir(error.response.data, { depth: null });
-
       return res.status(500).json({
         message: "Temu token lekérés hiba.",
         status: error.response.status,
         data: error.response.data,
       });
     }
-
-    console.error(error.message);
 
     res.status(500).json({
       message: "Temu token lekérés hiba.",
@@ -207,8 +300,6 @@ app.get("/temu/token-info", async (req, res) => {
     const result = await callTemu("bg.open.accesstoken.info.get");
     res.json(result);
   } catch (error) {
-    console.error("Token info hiba:");
-
     if (error.response) {
       return res.status(500).json({
         message: "Temu token info hiba.",
@@ -278,8 +369,6 @@ app.get("/temu/aftersales-test", async (req, res) => {
       allData,
     });
   } catch (error) {
-    console.error("Aftersales lista hiba:");
-
     if (error.response) {
       return res.status(500).json({
         message: "Temu aftersales lista hiba.",
@@ -318,8 +407,6 @@ app.get("/temu/aftersales-detail", async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error("Aftersales detail hiba:");
-
     if (error.response) {
       return res.status(500).json({
         message: "Temu aftersales detail hiba.",
@@ -346,25 +433,20 @@ app.get("/temu/order-detail", async (req, res) => {
       });
     }
 
-    const result = await callTemu("bg.order.detail.get", {
-      parentOrderSn,
-      fulfillmentTypeList: ["fulfillBySeller"],
-    });
+    const result = await getOrderDetailV2(parentOrderSn);
 
     res.json(result);
   } catch (error) {
-    console.error("Order detail hiba:");
-
     if (error.response) {
       return res.status(500).json({
-        message: "Temu order detail hiba.",
+        message: "Temu order detail V2 hiba.",
         status: error.response.status,
         data: error.response.data,
       });
     }
 
     res.status(500).json({
-      message: "Temu order detail hiba.",
+      message: "Temu order detail V2 hiba.",
       error: error.message,
     });
   }
@@ -391,42 +473,39 @@ app.get("/temu/packeta-data", async (req, res) => {
       }
     );
 
-    const orderDetail = await callTemu("bg.order.detail.get", {
-      parentOrderSn,
-      fulfillmentTypeList: ["fulfillBySeller"],
-    });
+    const orderDetail = await getOrderDetailV2(parentOrderSn);
 
     const refund = getRefundAmount(afterSalesDetail);
 
     const customerEmail =
-      findFirstValueByKeyDeep(orderDetail, ["email", "mail"]) ||
-      findFirstValueByKeyDeep(afterSalesDetail, ["email", "mail"]);
+      findEmailDeep(orderDetail?.result) || findEmailDeep(afterSalesDetail);
 
     const customerPhone =
-      findFirstValueByKeyDeep(orderDetail, ["phone", "mobile", "tel"]) ||
-      findFirstValueByKeyDeep(afterSalesDetail, ["phone", "mobile", "tel"]);
+      findPhoneDeep(orderDetail?.result) || findPhoneDeep(afterSalesDetail);
 
     res.json({
       success: true,
       packetaData: {
         orderNumber: parentOrderSn,
         parentAfterSalesSn,
-        value: refund.value,
+        valueRaw: refund.valueRaw,
+        valueDividedBy100: refund.valueDividedBy100,
         currency: refund.currency,
         customerEmail,
         customerPhone,
       },
+      note:
+        "Ha valueRaw 2254400, akkor a Packetába valószínűleg a valueDividedBy100 érték kell: 22544.",
       debug: {
         refundSource: refund.source,
         afterSalesSuccess: afterSalesDetail.success,
         orderDetailSuccess: orderDetail.success,
+        orderDetailUsedMode: orderDetail.usedMode,
         afterSalesDetail,
         orderDetail,
       },
     });
   } catch (error) {
-    console.error("Packeta adat hiba:");
-
     if (error.response) {
       return res.status(500).json({
         message: "Packeta adat összeállítás hiba.",
