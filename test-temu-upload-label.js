@@ -60,6 +60,11 @@ function makeSign(params, appSecret) {
     .toUpperCase();
 }
 
+function getTemuBaseUrl() {
+  const url = new URL(TEMU_API_URL);
+  return `${url.protocol}//${url.host}`;
+}
+
 async function callTemu(type, payload = {}) {
   if (!TEMU_APP_KEY || !TEMU_APP_SECRET || !TEMU_ACCESS_TOKEN) {
     throw new Error(
@@ -88,7 +93,7 @@ async function callTemu(type, payload = {}) {
   return response.data;
 }
 
-async function uploadGeneralFile(filePath) {
+async function uploadGeneralFileDirect(filePath) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Nem találom a PDF fájlt: ${filePath}`);
   }
@@ -99,35 +104,116 @@ async function uploadGeneralFile(filePath) {
     );
   }
 
-  const params = {
-    type: "api.galerie.general_file.upload",
-    app_key: TEMU_APP_KEY,
-    access_token: TEMU_ACCESS_TOKEN,
-    timestamp: Math.floor(Date.now() / 1000),
-    data_type: "JSON",
-  };
+  const baseUrl = getTemuBaseUrl();
 
-  params.sign = makeSign(params, TEMU_APP_SECRET);
+  const uploadAttempts = [
+    {
+      name: "direct_general_file_form_params_file",
+      url: `${baseUrl}/api/galerie/general_file`,
+      fileField: "file",
+      paramsPlacement: "form",
+    },
+    {
+      name: "direct_general_file_query_params_file",
+      url: `${baseUrl}/api/galerie/general_file`,
+      fileField: "file",
+      paramsPlacement: "query",
+    },
+    {
+      name: "direct_general_file_upload_form_params_file",
+      url: `${baseUrl}/api/galerie/general_file/upload`,
+      fileField: "file",
+      paramsPlacement: "form",
+    },
+    {
+      name: "direct_general_file_upload_query_params_file",
+      url: `${baseUrl}/api/galerie/general_file/upload`,
+      fileField: "file",
+      paramsPlacement: "query",
+    },
+    {
+      name: "direct_general_file_form_params_uploadFile",
+      url: `${baseUrl}/api/galerie/general_file`,
+      fileField: "uploadFile",
+      paramsPlacement: "form",
+    },
+    {
+      name: "direct_general_file_query_params_uploadFile",
+      url: `${baseUrl}/api/galerie/general_file`,
+      fileField: "uploadFile",
+      paramsPlacement: "query",
+    },
+  ];
 
-  const form = new FormData();
+  for (const attempt of uploadAttempts) {
+    console.log("File upload próba:", attempt.name);
+    console.log("URL:", attempt.url);
 
-  for (const [key, value] of Object.entries(params)) {
-    form.append(key, value);
+    const params = {
+      app_key: TEMU_APP_KEY,
+      access_token: TEMU_ACCESS_TOKEN,
+      timestamp: Math.floor(Date.now() / 1000),
+      data_type: "JSON",
+    };
+
+    params.sign = makeSign(params, TEMU_APP_SECRET);
+
+    const form = new FormData();
+
+    let requestUrl = attempt.url;
+
+    if (attempt.paramsPlacement === "form") {
+      for (const [key, value] of Object.entries(params)) {
+        form.append(key, value);
+      }
+    }
+
+    if (attempt.paramsPlacement === "query") {
+      const query = new URLSearchParams(params);
+      requestUrl = `${attempt.url}?${query.toString()}`;
+    }
+
+    form.append(attempt.fileField, fs.createReadStream(filePath), {
+      filename: path.basename(filePath),
+      contentType: "application/pdf",
+    });
+
+    try {
+      const response = await axios.post(requestUrl, form, {
+        headers: form.getHeaders(),
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        timeout: 60000,
+      });
+
+      console.log("Upload válasz:");
+      console.log(JSON.stringify(response.data, null, 2));
+
+      if (isTemuSuccess(response.data)) {
+        console.log("Sikeres file upload próba:", attempt.name);
+        return response.data;
+      }
+
+      console.log("Nem sikerült ezzel a file upload változattal.");
+      console.log("----------");
+    } catch (error) {
+      console.log("File upload request hiba:", attempt.name);
+
+      if (error.response) {
+        console.log("HTTP status:", error.response.status);
+        console.log(error.response.data);
+      } else {
+        console.log(error.message);
+      }
+
+      console.log("----------");
+    }
   }
 
-  form.append("file", fs.createReadStream(filePath), {
-    filename: path.basename(filePath),
-    contentType: "application/pdf",
-  });
-
-  const response = await axios.post(TEMU_API_URL, form, {
-    headers: form.getHeaders(),
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity,
-    timeout: 60000,
-  });
-
-  return response.data;
+  return {
+    success: false,
+    errorMsg: "Egyik direct file upload változat sem sikerült.",
+  };
 }
 
 function findValueByKeys(obj, keys) {
@@ -172,7 +258,7 @@ function getTemuErrorMessage(response) {
   );
 }
 
-function buildReturnLabelPayloadVariants(fileValue) {
+function buildReturnLabelPayloadVariants(fileValue, returnWarehouseId) {
   return [
     {
       name: "variant_1_returnLabelFileId_trackingNumber_carrierName",
@@ -185,7 +271,18 @@ function buildReturnLabelPayloadVariants(fileValue) {
       },
     },
     {
-      name: "variant_2_fileId_logisticsTrackingNumber_logisticsProviderName",
+      name: "variant_2_with_returnWarehouseId",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+        returnLabelFileId: fileValue,
+        trackingNumber: RETURN_TRACKING_NUMBER,
+        carrierName: RETURN_CARRIER_NAME,
+      },
+    },
+    {
+      name: "variant_3_fileId_logisticsTrackingNumber_logisticsProviderName",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
@@ -195,7 +292,7 @@ function buildReturnLabelPayloadVariants(fileValue) {
       },
     },
     {
-      name: "variant_3_returnLabelUrl_trackingNumber_carrierName",
+      name: "variant_4_returnLabelUrl_trackingNumber_carrierName",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
@@ -205,7 +302,7 @@ function buildReturnLabelPayloadVariants(fileValue) {
       },
     },
     {
-      name: "variant_4_returnLabelFileId_returnTrackingNumber_returnCarrierName",
+      name: "variant_5_returnLabelFileId_returnTrackingNumber_returnCarrierName",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
@@ -215,7 +312,7 @@ function buildReturnLabelPayloadVariants(fileValue) {
       },
     },
     {
-      name: "variant_5_returnLabelFileList",
+      name: "variant_6_returnLabelFileList",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
@@ -229,7 +326,7 @@ function buildReturnLabelPayloadVariants(fileValue) {
       },
     },
     {
-      name: "variant_6_returnLabelInfo",
+      name: "variant_7_returnLabelInfo",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
@@ -241,7 +338,7 @@ function buildReturnLabelPayloadVariants(fileValue) {
       },
     },
     {
-      name: "variant_7_logisticsInfo",
+      name: "variant_8_logisticsInfo",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
@@ -252,7 +349,26 @@ function buildReturnLabelPayloadVariants(fileValue) {
         },
       },
     },
-  ];
+    {
+      name: "variant_9_returnLogisticsInfo_with_warehouse",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+        returnLogisticsInfo: {
+          returnLabelFileId: fileValue,
+          trackingNumber: RETURN_TRACKING_NUMBER,
+          carrierName: RETURN_CARRIER_NAME,
+        },
+      },
+    },
+  ].filter((variant) => {
+    if (variant.payload.returnWarehouseId === undefined) {
+      delete variant.payload.returnWarehouseId;
+    }
+
+    return true;
+  });
 }
 
 async function main() {
@@ -283,10 +399,18 @@ async function main() {
   console.log(JSON.stringify(prepareResponse, null, 2));
   console.log("----------");
 
-  console.log("2. PDF feltöltés Temuba general_file upload végponton...");
+  const returnWarehouseId =
+    prepareResponse?.result?.availableReturnWarehouseList?.[0]?.warehouseId ||
+    null;
 
-  const fileUploadResponse = await uploadGeneralFile(PDF_PATH);
+  console.log("returnWarehouseId:", returnWarehouseId || "-");
+  console.log("----------");
 
+  console.log("2. PDF feltöltés Temuba direct general_file végponton...");
+
+  const fileUploadResponse = await uploadGeneralFileDirect(PDF_PATH);
+
+  console.log("Végső file upload válasz:");
   console.log(JSON.stringify(fileUploadResponse, null, 2));
   console.log("----------");
 
@@ -305,7 +429,7 @@ async function main() {
 
   if (!fileValue) {
     console.log("Nem találtam file azonosítót / URL-t a Temu upload válaszban.");
-    console.log("Másold be a teljes fileUploadResponse választ, és ahhoz igazítjuk.");
+    console.log("Ha minden upload próba hibás, akkor a Temu file upload endpoint pontos URL-je / jogosultsága hiányzik.");
     return;
   }
 
@@ -315,7 +439,7 @@ async function main() {
 
   console.log("3. Return label feltöltési payload-változatok próbája...");
 
-  const variants = buildReturnLabelPayloadVariants(fileValue);
+  const variants = buildReturnLabelPayloadVariants(fileValue, returnWarehouseId);
 
   for (const variant of variants) {
     console.log("Próba:", variant.name);
