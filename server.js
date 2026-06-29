@@ -406,10 +406,13 @@ function extractBaseOrderData(order) {
 
 async function findBaseOrderByPo(po) {
   const now = Math.floor(Date.now() / 1000);
-  const daysBack = 120;
-  const dateFrom = now - daysBack * 24 * 60 * 60;
+  const daysBack = 180;
+  let dateFrom = now - daysBack * 24 * 60 * 60;
 
+  const maxPages = 30;
   const attempts = [];
+  const allOrders = [];
+  const matchedOrders = [];
 
   const orderSourcesResult = await callBaseLinker("getOrderSources", {});
   attempts.push({
@@ -417,32 +420,59 @@ async function findBaseOrderByPo(po) {
     result: orderSourcesResult,
   });
 
-  const ordersResult = await callBaseLinker("getOrders", {
-    date_confirmed_from: dateFrom,
-    get_unconfirmed_orders: true,
-  });
-
-  attempts.push({
-    method: "getOrders",
-    parameters: {
+  for (let page = 1; page <= maxPages; page++) {
+    const parameters = {
       date_confirmed_from: dateFrom,
       get_unconfirmed_orders: true,
-    },
-    returnedCount: ordersResult?.orders?.length || 0,
-  });
+      filter_order_source: "temuhu",
+      filter_order_source_id: 29314,
+    };
 
-  const orders = ordersResult?.orders || [];
+    const ordersResult = await callBaseLinker("getOrders", parameters);
+    const orders = ordersResult?.orders || [];
 
-  const matchedOrders = orders.filter((order) => objectContainsText(order, po));
+    attempts.push({
+      method: "getOrders",
+      page,
+      parameters,
+      returnedCount: orders.length,
+      firstDateConfirmed: orders[0]?.date_confirmed || null,
+      lastDateConfirmed: orders[orders.length - 1]?.date_confirmed || null,
+      firstOrderId: orders[0]?.order_id || null,
+      lastOrderId: orders[orders.length - 1]?.order_id || null,
+      status: ordersResult?.status || null,
+    });
+
+    allOrders.push(...orders);
+
+    const pageMatches = orders.filter((order) => objectContainsText(order, po));
+    matchedOrders.push(...pageMatches);
+
+    if (pageMatches.length > 0) {
+      break;
+    }
+
+    if (orders.length < 100) {
+      break;
+    }
+
+    const lastDateConfirmed = orders[orders.length - 1]?.date_confirmed;
+
+    if (!lastDateConfirmed || lastDateConfirmed <= dateFrom) {
+      break;
+    }
+
+    dateFrom = lastDateConfirmed + 1;
+  }
 
   return {
     success: true,
     po,
-    dateFrom,
-    checkedOrders: orders.length,
+    checkedOrders: allOrders.length,
     matchedCount: matchedOrders.length,
     matchedOrders: matchedOrders.map(extractBaseOrderData),
     debug: {
+      maxPages,
       attempts,
     },
   };
