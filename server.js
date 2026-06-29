@@ -130,6 +130,26 @@ function getRefundAmount(afterSalesDetailResult) {
   };
 }
 
+function isMaskedValue(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value !== "string") return false;
+
+  const trimmed = value.trim();
+
+  return (
+    trimmed === "******" ||
+    trimmed === "***" ||
+    trimmed.includes("****") ||
+    /^[*]+$/.test(trimmed)
+  );
+}
+
+function cleanMaskedValue(value) {
+  if (isMaskedValue(value)) return null;
+  if (value === "") return null;
+  return value || null;
+}
+
 async function getOrderDetailV2(parentOrderSn) {
   const attempts = [];
 
@@ -186,69 +206,27 @@ async function getOrderDetailV2(parentOrderSn) {
 async function getShippingInfo(parentOrderSn) {
   const attempts = [];
 
-  const attempt1 = await callTemu("bg.order.shippinginfo.v2.get", {
-    parentOrderSn,
-  });
-
-  attempts.push({
-    type: "bg.order.shippinginfo.v2.get",
-    mode: "top-level",
-    response: attempt1,
-  });
-
-  if (attempt1.success) {
-    return {
-      success: true,
-      usedType: "bg.order.shippinginfo.v2.get",
-      usedMode: "top-level",
-      result: attempt1,
-      attempts,
-    };
-  }
-
-  const attempt2 = await callTemu("bg.order.shippinginfo.v2.get", {
-    request: {
-      parentOrderSn,
-    },
-  });
-
-  attempts.push({
-    type: "bg.order.shippinginfo.v2.get",
-    mode: "request-wrapper",
-    response: attempt2,
-  });
-
-  if (attempt2.success) {
-    return {
-      success: true,
-      usedType: "bg.order.shippinginfo.v2.get",
-      usedMode: "request-wrapper",
-      result: attempt2,
-      attempts,
-    };
-  }
-
-  const attempt3 = await callTemu("bg.order.decryptshippinginfo.get", {
+  const decryptAttempt1 = await callTemu("bg.order.decryptshippinginfo.get", {
     parentOrderSn,
   });
 
   attempts.push({
     type: "bg.order.decryptshippinginfo.get",
     mode: "top-level",
-    response: attempt3,
+    response: decryptAttempt1,
   });
 
-  if (attempt3.success) {
+  if (decryptAttempt1.success) {
     return {
       success: true,
       usedType: "bg.order.decryptshippinginfo.get",
       usedMode: "top-level",
-      result: attempt3,
+      result: decryptAttempt1,
       attempts,
     };
   }
 
-  const attempt4 = await callTemu("bg.order.decryptshippinginfo.get", {
+  const decryptAttempt2 = await callTemu("bg.order.decryptshippinginfo.get", {
     request: {
       parentOrderSn,
     },
@@ -257,15 +235,57 @@ async function getShippingInfo(parentOrderSn) {
   attempts.push({
     type: "bg.order.decryptshippinginfo.get",
     mode: "request-wrapper",
-    response: attempt4,
+    response: decryptAttempt2,
   });
 
-  if (attempt4.success) {
+  if (decryptAttempt2.success) {
     return {
       success: true,
       usedType: "bg.order.decryptshippinginfo.get",
       usedMode: "request-wrapper",
-      result: attempt4,
+      result: decryptAttempt2,
+      attempts,
+    };
+  }
+
+  const shippingAttempt1 = await callTemu("bg.order.shippinginfo.v2.get", {
+    parentOrderSn,
+  });
+
+  attempts.push({
+    type: "bg.order.shippinginfo.v2.get",
+    mode: "top-level",
+    response: shippingAttempt1,
+  });
+
+  if (shippingAttempt1.success) {
+    return {
+      success: true,
+      usedType: "bg.order.shippinginfo.v2.get",
+      usedMode: "top-level",
+      result: shippingAttempt1,
+      attempts,
+    };
+  }
+
+  const shippingAttempt2 = await callTemu("bg.order.shippinginfo.v2.get", {
+    request: {
+      parentOrderSn,
+    },
+  });
+
+  attempts.push({
+    type: "bg.order.shippinginfo.v2.get",
+    mode: "request-wrapper",
+    response: shippingAttempt2,
+  });
+
+  if (shippingAttempt2.success) {
+    return {
+      success: true,
+      usedType: "bg.order.shippinginfo.v2.get",
+      usedMode: "request-wrapper",
+      result: shippingAttempt2,
       attempts,
     };
   }
@@ -274,7 +294,7 @@ async function getShippingInfo(parentOrderSn) {
     success: false,
     usedType: null,
     usedMode: null,
-    result: attempt4,
+    result: shippingAttempt2,
     attempts,
   };
 }
@@ -282,18 +302,31 @@ async function getShippingInfo(parentOrderSn) {
 function extractShippingFields(shippingInfo) {
   const result = shippingInfo?.result?.result || shippingInfo?.result || {};
 
+  const rawEmail = result.mail || null;
+  const rawPhone = result.mobile || result.backupMobile || null;
+  const rawName = result.receiptName || null;
+
   return {
-    customerEmail: result.mail || null,
-    customerPhone: result.mobile || result.backupMobile || null,
-    customerName: result.receiptName || null,
-    country: result.regionName1 || null,
-    county: result.regionName2 || null,
-    city: result.regionName3 || null,
-    postCode: result.postCode || null,
-    addressLineAll: result.addressLineAll || null,
-    addressLine1: result.addressLine1 || null,
-    addressLine2: result.addressLine2 || null,
-    addressLine3: result.addressLine3 || null,
+    customerEmail: cleanMaskedValue(rawEmail),
+    customerPhone: cleanMaskedValue(rawPhone),
+    customerName: cleanMaskedValue(rawName),
+
+    rawCustomerEmail: rawEmail,
+    rawCustomerPhone: rawPhone,
+    rawCustomerName: rawName,
+
+    isEmailMasked: isMaskedValue(rawEmail),
+    isPhoneMasked: isMaskedValue(rawPhone),
+    isNameMasked: isMaskedValue(rawName),
+
+    country: cleanMaskedValue(result.regionName1),
+    county: cleanMaskedValue(result.regionName2),
+    city: cleanMaskedValue(result.regionName3),
+    postCode: cleanMaskedValue(result.postCode),
+    addressLineAll: cleanMaskedValue(result.addressLineAll),
+    addressLine1: cleanMaskedValue(result.addressLine1),
+    addressLine2: cleanMaskedValue(result.addressLine2),
+    addressLine3: cleanMaskedValue(result.addressLine3),
   };
 }
 
@@ -313,7 +346,7 @@ app.get("/", (req, res) => {
     <p>Order detail V2:</p>
     <code>/temu/order-detail?parentOrderSn=PO-090-12329685781113212</code>
 
-    <p>Shipping info:</p>
+    <p>Shipping info / decrypt teszt:</p>
     <code>/temu/shipping-info?parentOrderSn=PO-090-12329685781113212</code>
 
     <p>Packeta adat teszt:</p>
@@ -535,6 +568,11 @@ app.get("/temu/shipping-info", async (req, res) => {
       usedType: shippingInfo.usedType,
       usedMode: shippingInfo.usedMode,
       shippingFields,
+      diagnostic: {
+        isEmailMasked: shippingFields.isEmailMasked,
+        isPhoneMasked: shippingFields.isPhoneMasked,
+        isNameMasked: shippingFields.isNameMasked,
+      },
       debug: shippingInfo,
     });
   } catch (error) {
@@ -592,6 +630,14 @@ app.get("/temu/packeta-data", async (req, res) => {
         customerPhone: shippingFields.customerPhone,
         customerName: shippingFields.customerName,
       },
+      diagnostic: {
+        shippingInfoSuccess: shippingInfo.success,
+        shippingInfoUsedType: shippingInfo.usedType,
+        shippingInfoUsedMode: shippingInfo.usedMode,
+        isEmailMasked: shippingFields.isEmailMasked,
+        isPhoneMasked: shippingFields.isPhoneMasked,
+        isNameMasked: shippingFields.isNameMasked,
+      },
       shippingAddressDebug: {
         country: shippingFields.country,
         county: shippingFields.county,
@@ -607,9 +653,6 @@ app.get("/temu/packeta-data", async (req, res) => {
         afterSalesSuccess: afterSalesDetail.success,
         orderDetailSuccess: orderDetail.success,
         orderDetailUsedMode: orderDetail.usedMode,
-        shippingInfoSuccess: shippingInfo.success,
-        shippingInfoUsedType: shippingInfo.usedType,
-        shippingInfoUsedMode: shippingInfo.usedMode,
         afterSalesDetail,
         orderDetail,
         shippingInfo,
