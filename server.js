@@ -69,8 +69,11 @@ app.get("/", (req, res) => {
     <p>Token teszt:</p>
     <code>/temu/token-info</code>
 
-    <p>Aftersales teszt:</p>
+    <p>Aftersales címkére várók:</p>
     <code>/temu/aftersales-test</code>
+
+    <p>Aftersales részletek:</p>
+    <code>/temu/aftersales-detail?parentAfterSalesSn=PO-090-12329685781113212-D01</code>
 
     <p>Callback URL:</p>
     <code>/temu/callback?code=TESZT</code>
@@ -165,6 +168,7 @@ app.get("/temu/aftersales-test", async (req, res) => {
     let pageNo = 1;
     let allData = [];
     let hasMore = true;
+    let lastRequestId = null;
 
     while (hasMore && pageNo <= 20) {
       const result = await callTemu("bg.aftersales.parentaftersales.list.get", {
@@ -175,6 +179,8 @@ app.get("/temu/aftersales-test", async (req, res) => {
         afterSalesStatusGroup: 1,
       });
 
+      lastRequestId = result.requestId;
+
       if (!result.success) {
         return res.json({
           success: false,
@@ -184,7 +190,6 @@ app.get("/temu/aftersales-test", async (req, res) => {
       }
 
       const data = result?.result?.data || [];
-
       allData = allData.concat(data);
 
       if (data.length < pageSize) {
@@ -200,6 +205,7 @@ app.get("/temu/aftersales-test", async (req, res) => {
 
     res.json({
       success: true,
+      requestId: lastRequestId,
       checkedPages: pageNo,
       returnedCount: allData.length,
       labelNeededCount: labelNeeded.length,
@@ -224,6 +230,46 @@ app.get("/temu/aftersales-test", async (req, res) => {
 
     res.status(500).json({
       message: "Temu aftersales lista hiba.",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/temu/aftersales-detail", async (req, res) => {
+  try {
+    const parentAfterSalesSn = req.query.parentAfterSalesSn;
+
+    if (!parentAfterSalesSn) {
+      return res.status(400).json({
+        message: "Hiányzik a parentAfterSalesSn paraméter.",
+        example:
+          "/temu/aftersales-detail?parentAfterSalesSn=PO-090-12329685781113212-D01",
+      });
+    }
+
+    const result = await callTemu("temu.aftersales.parentaftersales.detail.get", {
+      parentAfterSalesSn,
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Aftersales detail hiba:");
+
+    if (error.response) {
+      console.error("HTTP status:", error.response.status);
+      console.dir(error.response.data, { depth: null });
+
+      return res.status(500).json({
+        message: "Temu aftersales detail hiba.",
+        status: error.response.status,
+        data: error.response.data,
+      });
+    }
+
+    console.error(error.message);
+
+    res.status(500).json({
+      message: "Temu aftersales detail hiba.",
       error: error.message,
     });
   }
