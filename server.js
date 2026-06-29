@@ -149,7 +149,41 @@ app.get("/temu/token-info", async (req, res) => {
     });
   }
 });
+app.get("/temu/aftersales-test", async (req, res) => {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const thirtyDaysAgo = now - 30 * 24 * 60 * 60;
 
+    const result = await callTemu("bg.aftersales.parentaftersales.list.get", {
+      pageNo: 1,
+      pageSize: 20,
+      updateAtStart: thirtyDaysAgo,
+      updateAtEnd: now,
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Aftersales lista hiba:");
+
+    if (error.response) {
+      console.error("HTTP status:", error.response.status);
+      console.dir(error.response.data, { depth: null });
+
+      return res.status(500).json({
+        message: "Temu aftersales lista hiba.",
+        status: error.response.status,
+        data: error.response.data,
+      });
+    }
+
+    console.error(error.message);
+
+    res.status(500).json({
+      message: "Temu aftersales lista hiba.",
+      error: error.message,
+    });
+  }
+});
 app.post("/temu/webhook", async (req, res) => {
   console.log("Temu webhook érkezett");
   console.log("Headers:", req.headers);
