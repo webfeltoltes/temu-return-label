@@ -16,6 +16,9 @@ const {
 const PARENT_ORDER_SN = "PO-090-12329685781113212";
 const PARENT_AFTER_SALES_SN = "PO-090-12329685781113212-D01";
 
+const RETURN_TRACKING_NUMBER = "Z3016356633";
+const RETURN_CARRIER_NAME = "Packeta";
+
 const PDF_PATH = path.join(
   __dirname,
   "labels",
@@ -34,7 +37,12 @@ function signValue(value) {
 
 function makeSign(params, appSecret) {
   const sortedKeys = Object.keys(params)
-    .filter((key) => key !== "sign" && params[key] !== undefined && params[key] !== null)
+    .filter(
+      (key) =>
+        key !== "sign" &&
+        params[key] !== undefined &&
+        params[key] !== null
+    )
     .sort();
 
   let signStr = appSecret;
@@ -45,12 +53,18 @@ function makeSign(params, appSecret) {
 
   signStr += appSecret;
 
-  return crypto.createHash("md5").update(signStr, "utf8").digest("hex").toUpperCase();
+  return crypto
+    .createHash("md5")
+    .update(signStr, "utf8")
+    .digest("hex")
+    .toUpperCase();
 }
 
 async function callTemu(type, payload = {}) {
   if (!TEMU_APP_KEY || !TEMU_APP_SECRET || !TEMU_ACCESS_TOKEN) {
-    throw new Error("Hiányzik TEMU_APP_KEY / TEMU_APP_SECRET / TEMU_ACCESS_TOKEN a .env fájlból.");
+    throw new Error(
+      "Hiányzik TEMU_APP_KEY / TEMU_APP_SECRET / TEMU_ACCESS_TOKEN a .env fájlból."
+    );
   }
 
   const params = {
@@ -80,16 +94,16 @@ async function uploadGeneralFile(filePath) {
   }
 
   if (!TEMU_APP_KEY || !TEMU_APP_SECRET || !TEMU_ACCESS_TOKEN) {
-    throw new Error("Hiányzik TEMU_APP_KEY / TEMU_APP_SECRET / TEMU_ACCESS_TOKEN a .env fájlból.");
+    throw new Error(
+      "Hiányzik TEMU_APP_KEY / TEMU_APP_SECRET / TEMU_ACCESS_TOKEN a .env fájlból."
+    );
   }
-
-  const timestamp = Math.floor(Date.now() / 1000);
 
   const params = {
     type: "api.galerie.general_file.upload",
     app_key: TEMU_APP_KEY,
     access_token: TEMU_ACCESS_TOKEN,
-    timestamp,
+    timestamp: Math.floor(Date.now() / 1000),
     data_type: "JSON",
   };
 
@@ -106,9 +120,7 @@ async function uploadGeneralFile(filePath) {
     contentType: "application/pdf",
   });
 
-  const uploadUrl = TEMU_API_URL;
-
-  const response = await axios.post(uploadUrl, form, {
+  const response = await axios.post(TEMU_API_URL, form, {
     headers: form.getHeaders(),
     maxBodyLength: Infinity,
     maxContentLength: Infinity,
@@ -118,31 +130,129 @@ async function uploadGeneralFile(filePath) {
   return response.data;
 }
 
-function findFileId(obj) {
+function findValueByKeys(obj, keys) {
   if (!obj || typeof obj !== "object") return null;
 
-  const possibleKeys = [
-    "fileId",
-    "file_id",
-    "fileUrl",
-    "file_url",
-    "url",
-    "uri",
-    "id",
-  ];
-
-  for (const key of possibleKeys) {
+  for (const key of keys) {
     if (obj[key]) return obj[key];
   }
 
   for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
-      const found = findFileId(value);
+      const found = findValueByKeys(value, keys);
       if (found) return found;
     }
   }
 
   return null;
+}
+
+function isTemuSuccess(response) {
+  if (!response || typeof response !== "object") return false;
+
+  if (response.success === true) return true;
+  if (response.result?.success === true) return true;
+  if (response.errorCode === 1000000) return true;
+  if (response.error_code === 1000000) return true;
+
+  return false;
+}
+
+function getTemuErrorMessage(response) {
+  if (!response || typeof response !== "object") return "Ismeretlen hiba.";
+
+  return (
+    response.errorMsg ||
+    response.error_msg ||
+    response.message ||
+    response.msg ||
+    response.result?.errorMsg ||
+    response.result?.error_msg ||
+    JSON.stringify(response)
+  );
+}
+
+function buildReturnLabelPayloadVariants(fileValue) {
+  return [
+    {
+      name: "variant_1_returnLabelFileId_trackingNumber_carrierName",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnLabelFileId: fileValue,
+        trackingNumber: RETURN_TRACKING_NUMBER,
+        carrierName: RETURN_CARRIER_NAME,
+      },
+    },
+    {
+      name: "variant_2_fileId_logisticsTrackingNumber_logisticsProviderName",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        fileId: fileValue,
+        logisticsTrackingNumber: RETURN_TRACKING_NUMBER,
+        logisticsProviderName: RETURN_CARRIER_NAME,
+      },
+    },
+    {
+      name: "variant_3_returnLabelUrl_trackingNumber_carrierName",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnLabelUrl: fileValue,
+        trackingNumber: RETURN_TRACKING_NUMBER,
+        carrierName: RETURN_CARRIER_NAME,
+      },
+    },
+    {
+      name: "variant_4_returnLabelFileId_returnTrackingNumber_returnCarrierName",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnLabelFileId: fileValue,
+        returnTrackingNumber: RETURN_TRACKING_NUMBER,
+        returnCarrierName: RETURN_CARRIER_NAME,
+      },
+    },
+    {
+      name: "variant_5_returnLabelFileList",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnTrackingNumber: RETURN_TRACKING_NUMBER,
+        carrierName: RETURN_CARRIER_NAME,
+        returnLabelFileList: [
+          {
+            fileId: fileValue,
+          },
+        ],
+      },
+    },
+    {
+      name: "variant_6_returnLabelInfo",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnLabelInfo: {
+          fileId: fileValue,
+          trackingNumber: RETURN_TRACKING_NUMBER,
+          carrierName: RETURN_CARRIER_NAME,
+        },
+      },
+    },
+    {
+      name: "variant_7_logisticsInfo",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnLabelFileId: fileValue,
+        logisticsInfo: {
+          trackingNumber: RETURN_TRACKING_NUMBER,
+          carrierName: RETURN_CARRIER_NAME,
+        },
+      },
+    },
+  ];
 }
 
 async function main() {
@@ -153,43 +263,101 @@ async function main() {
     throw new Error("A PDF fájl nem létezik ezen az útvonalon.");
   }
 
-  console.log("1. Temu returnlabel prepare lekérés...");
+  console.log("Temu adatok:");
+  console.log("parentOrderSn:", PARENT_ORDER_SN);
+  console.log("parentAfterSalesSn:", PARENT_AFTER_SALES_SN);
+  console.log("trackingNumber:", RETURN_TRACKING_NUMBER);
+  console.log("carrier:", RETURN_CARRIER_NAME);
+  console.log("----------");
 
-  const prepareResponse = await callTemu("temu.aftersales.returnlabel.prepare.get", {
-    parentOrderSn: PARENT_ORDER_SN,
-    parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-  });
+  console.log("1. Return label prepare lekérés...");
+
+  const prepareResponse = await callTemu(
+    "temu.aftersales.returnlabel.prepare.get",
+    {
+      parentOrderSn: PARENT_ORDER_SN,
+      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+    }
+  );
 
   console.log(JSON.stringify(prepareResponse, null, 2));
+  console.log("----------");
 
   console.log("2. PDF feltöltés Temuba general_file upload végponton...");
 
   const fileUploadResponse = await uploadGeneralFile(PDF_PATH);
 
   console.log(JSON.stringify(fileUploadResponse, null, 2));
+  console.log("----------");
 
-  const fileId = findFileId(fileUploadResponse);
+  const fileValue =
+    findValueByKeys(fileUploadResponse, [
+      "fileId",
+      "file_id",
+      "fileKey",
+      "file_key",
+      "fileUrl",
+      "file_url",
+      "url",
+      "uri",
+      "id",
+    ]) || null;
 
-  if (!fileId) {
-    console.log("Nem találtam fileId / fileUrl értéket a Temu upload válaszban.");
-    console.log("A következő lépéshez látni kell, milyen mezőt ad vissza a Temu.");
+  if (!fileValue) {
+    console.log("Nem találtam file azonosítót / URL-t a Temu upload válaszban.");
+    console.log("Másold be a teljes fileUploadResponse választ, és ahhoz igazítjuk.");
     return;
   }
 
-  console.log("Talált Temu file azonosító:");
-  console.log(fileId);
+  console.log("Talált Temu file érték:");
+  console.log(fileValue);
+  console.log("----------");
 
-  console.log("3. Return label feltöltése aftersales-re...");
+  console.log("3. Return label feltöltési payload-változatok próbája...");
 
-  const uploadReturnLabelResponse = await callTemu("temu.aftersales.upload.returnlabel", {
-    parentOrderSn: PARENT_ORDER_SN,
-    parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-    returnLabelFileId: fileId,
-  });
+  const variants = buildReturnLabelPayloadVariants(fileValue);
 
-  console.log(JSON.stringify(uploadReturnLabelResponse, null, 2));
+  for (const variant of variants) {
+    console.log("Próba:", variant.name);
+    console.log("Payload:");
+    console.log(JSON.stringify(variant.payload, null, 2));
 
-  console.log("Kész.");
+    try {
+      const response = await callTemu(
+        "temu.aftersales.upload.returnlabel",
+        variant.payload
+      );
+
+      console.log("Temu válasz:");
+      console.log(JSON.stringify(response, null, 2));
+
+      if (isTemuSuccess(response)) {
+        console.log("SIKERES TEMU RETURN LABEL FELTÖLTÉS.");
+        console.log("Sikeres variant:", variant.name);
+        console.log("Tracking:", RETURN_TRACKING_NUMBER);
+        console.log("Carrier:", RETURN_CARRIER_NAME);
+        return;
+      }
+
+      console.log("Nem sikerült ezzel a változattal.");
+      console.log("Hiba:", getTemuErrorMessage(response));
+      console.log("----------");
+    } catch (error) {
+      console.log("HTTP / request hiba ennél a változatnál:", variant.name);
+
+      if (error.response) {
+        console.log("HTTP status:", error.response.status);
+        console.log(error.response.data);
+      } else {
+        console.log(error.message);
+      }
+
+      console.log("----------");
+    }
+  }
+
+  console.log("Egyik payload-változattal sem sikerült.");
+  console.log("A Temu válasz alapján pontosítjuk a mezőneveket.");
 }
 
 main().catch((error) => {
