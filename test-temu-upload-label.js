@@ -152,10 +152,11 @@ async function main() {
   console.log("mallWarehouseId:", mallWarehouseId);
   console.log("----------");
 
-  const payload = {
-    parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-    parentOrderSn: PARENT_ORDER_SN,
-    returnLabelDTOList: [
+const payload = {
+  parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+  parentOrderSn: PARENT_ORDER_SN,
+  latestTimestamp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+  returnLabelDTOList: [
       {
         mallWarehouseId,
         returnLabelUrl,
