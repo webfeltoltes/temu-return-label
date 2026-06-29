@@ -22,7 +22,15 @@ const TRACKING_NUMBER = "Z3016356633";
 const PDF_FILE_NAME =
   "PO-090-12329685781113212-3016356633-A7_on_A7.pdf";
 
+const CERTIFICATE_IMAGE_FILE_NAME =
+  "PO-090-12329685781113212-3016356633-A7_on_A7.png";
+
 const PDF_PATH = path.join(__dirname, "labels", PDF_FILE_NAME);
+const CERTIFICATE_IMAGE_PATH = path.join(
+  __dirname,
+  "labels",
+  CERTIFICATE_IMAGE_FILE_NAME
+);
 
 function signValue(value) {
   if (value === undefined || value === null || value === "") {
@@ -96,15 +104,22 @@ function isSuccess(response) {
 }
 
 async function main() {
-  console.log("Temu return label upload - returnLabelDTOList verzió");
+  console.log("Temu return label upload - PNG certificate verzió");
   console.log("parentOrderSn:", PARENT_ORDER_SN);
   console.log("parentAfterSalesSn:", PARENT_AFTER_SALES_SN);
   console.log("trackingNumber:", TRACKING_NUMBER);
   console.log("PDF:", PDF_PATH);
+  console.log("Certificate image:", CERTIFICATE_IMAGE_PATH);
   console.log("----------");
 
   if (!fs.existsSync(PDF_PATH)) {
     throw new Error(`Nem találom a PDF-et: ${PDF_PATH}`);
+  }
+
+  if (!fs.existsSync(CERTIFICATE_IMAGE_PATH)) {
+    throw new Error(
+      `Nem találom a PNG certificate képet: ${CERTIFICATE_IMAGE_PATH}`
+    );
   }
 
   if (!RETURN_LABEL_PUBLIC_BASE_URL) {
@@ -115,10 +130,14 @@ async function main() {
     throw new Error("Hiányzik TEMU_PACKETA_CARRIER_ID a .env fájlból.");
   }
 
-  const returnLabelUrl =
-    `${RETURN_LABEL_PUBLIC_BASE_URL.replace(/\/$/, "")}/${PDF_FILE_NAME}`;
+  const publicBaseUrl = RETURN_LABEL_PUBLIC_BASE_URL.replace(/\/$/, "");
+
+  const returnLabelUrl = `${publicBaseUrl}/${PDF_FILE_NAME}`;
+  const pickUpCertificateImageUrl =
+    `${publicBaseUrl}/${CERTIFICATE_IMAGE_FILE_NAME}`;
 
   console.log("returnLabelUrl:", returnLabelUrl);
+  console.log("pickUpCertificateImageUrl:", pickUpCertificateImageUrl);
   console.log("carrierId:", Number(TEMU_PACKETA_CARRIER_ID));
   console.log("----------");
 
@@ -151,179 +170,125 @@ async function main() {
 
   console.log("mallWarehouseId:", mallWarehouseId);
   console.log("----------");
+
   const logisticsWarehouseId = "WH-08329939107980321";
 
-const baseDtoNumberCarrier = {
-  mallWarehouseId,
-  returnLabelUrl,
-  carrierId: Number(TEMU_PACKETA_CARRIER_ID),
-  trackingNumber: TRACKING_NUMBER,
-};
+  const baseDtoNumberCarrier = {
+    mallWarehouseId,
+    returnLabelUrl,
+    carrierId: Number(TEMU_PACKETA_CARRIER_ID),
+    trackingNumber: TRACKING_NUMBER,
+  };
 
-const baseDtoStringCarrier = {
-  mallWarehouseId,
-  returnLabelUrl,
-  carrierId: String(TEMU_PACKETA_CARRIER_ID),
-  trackingNumber: TRACKING_NUMBER,
-};
+  const baseDtoWithPngCertificate = {
+    mallWarehouseId,
+    pickUpCertificateImageUrl,
+    returnLabelUrl,
+    carrierId: Number(TEMU_PACKETA_CARRIER_ID),
+    trackingNumber: TRACKING_NUMBER,
+  };
 
-const nowMs = Date.now();
-const in1DayMs = nowMs + 1 * 24 * 60 * 60 * 1000;
-const in7DaysMs = nowMs + 7 * 24 * 60 * 60 * 1000
+  const nowMs = Date.now();
+  const in1DayMs = nowMs + 1 * 24 * 60 * 60 * 1000;
+  const in7DaysMs = nowMs + 7 * 24 * 60 * 60 * 1000;
 
-const uploadVariants = [
-  {
-    name: "variant_1_base_number_carrier",
-    payload: {
-      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-      parentOrderSn: PARENT_ORDER_SN,
-      returnLabelDTOList: [baseDtoNumberCarrier],
-    },
-  },
-  {
-    name: "variant_2_pickup_mode_3_latest_ms",
-    payload: {
-      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-      parentOrderSn: PARENT_ORDER_SN,
-      pickUpTimeScheduleMode: 3,
-      latestTimestamp: in7DaysMs,
-      returnLabelDTOList: [baseDtoNumberCarrier],
-    },
-  },
-  {
-    name: "variant_3_pickup_mode_1_start_end_ms",
-    payload: {
-      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-      parentOrderSn: PARENT_ORDER_SN,
-      pickUpTimeScheduleMode: 1,
-      startTimestamp: in1DayMs,
-      endTimestamp: in7DaysMs,
-      returnLabelDTOList: [baseDtoNumberCarrier],
-    },
-  },
-  {
-    name: "variant_4_with_pickup_certificate",
-    payload: {
-      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-      parentOrderSn: PARENT_ORDER_SN,
-      returnLabelDTOList: [
-        {
-          ...baseDtoNumberCarrier,
-          pickUpCertificateImageUrl: returnLabelUrl,
-        },
-      ],
-    },
-  },
-  {
-    name: "variant_5_pickup_mode_3_latest_ms_with_certificate",
-    payload: {
-      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-      parentOrderSn: PARENT_ORDER_SN,
-      pickUpTimeScheduleMode: 3,
-      latestTimestamp: in7DaysMs,
-      returnLabelDTOList: [
-        {
-          ...baseDtoNumberCarrier,
-          pickUpCertificateImageUrl: returnLabelUrl,
-        },
-      ],
-    },
-  },
-  {
-    name: "variant_6_pickup_mode_1_start_end_ms_with_certificate",
-    payload: {
-      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-      parentOrderSn: PARENT_ORDER_SN,
-      pickUpTimeScheduleMode: 1,
-      startTimestamp: in1DayMs,
-      endTimestamp: in7DaysMs,
-      returnLabelDTOList: [
-        {
-          ...baseDtoNumberCarrier,
-          pickUpCertificateImageUrl: returnLabelUrl,
-        },
-      ],
-    },
-  },
-{
-    name: "variant_7_request_wrapper_base",
-    payload: {
-      request: {
+  const uploadVariants = [
+    {
+      name: "variant_1_base_pdf_only",
+      payload: {
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
         returnLabelDTOList: [baseDtoNumberCarrier],
       },
     },
-  },
-  {
-    name: "variant_8_request_wrapper_pickup_mode_3_latest_ms",
-    payload: {
-      request: {
+    {
+      name: "variant_2_png_certificate",
+      payload: {
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [baseDtoWithPngCertificate],
+      },
+    },
+    {
+      name: "variant_3_pickup_mode_3_latest_ms_with_png_certificate",
+      payload: {
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
         pickUpTimeScheduleMode: 3,
         latestTimestamp: in7DaysMs,
-        returnLabelDTOList: [baseDtoNumberCarrier],
+        returnLabelDTOList: [baseDtoWithPngCertificate],
       },
     },
-  },
-  {
-    name: "variant_9_request_wrapper_pickup_mode_1_start_end_ms",
-    payload: {
-      request: {
+    {
+      name: "variant_4_pickup_mode_1_start_end_ms_with_png_certificate",
+      payload: {
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
         pickUpTimeScheduleMode: 1,
         startTimestamp: in1DayMs,
         endTimestamp: in7DaysMs,
-        returnLabelDTOList: [baseDtoNumberCarrier],
+        returnLabelDTOList: [baseDtoWithPngCertificate],
       },
     },
-  },
-{
-  name: "variant_7_logistics_warehouse_id",
-  payload: {
-    parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-    parentOrderSn: PARENT_ORDER_SN,
-    returnLabelDTOList: [
-      {
-        mallWarehouseId: logisticsWarehouseId,
-        returnLabelUrl,
-        carrierId: Number(TEMU_PACKETA_CARRIER_ID),
-        trackingNumber: TRACKING_NUMBER,
+    {
+      name: "variant_5_logistics_warehouse_id_pdf_only",
+      payload: {
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [
+          {
+            mallWarehouseId: logisticsWarehouseId,
+            returnLabelUrl,
+            carrierId: Number(TEMU_PACKETA_CARRIER_ID),
+            trackingNumber: TRACKING_NUMBER,
+          },
+        ],
       },
-    ],
-  },
-},
-];
+    },
+    {
+      name: "variant_6_logistics_warehouse_id_with_png_certificate",
+      payload: {
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [
+          {
+            mallWarehouseId: logisticsWarehouseId,
+            pickUpCertificateImageUrl,
+            returnLabelUrl,
+            carrierId: Number(TEMU_PACKETA_CARRIER_ID),
+            trackingNumber: TRACKING_NUMBER,
+          },
+        ],
+      },
+    },
+  ];
 
-for (const variant of uploadVariants) {
-  console.log("2. Upload próba:", variant.name);
-  console.log("Payload:");
-  console.log(JSON.stringify(variant.payload, null, 2));
-  console.log("----------");
+  for (const variant of uploadVariants) {
+    console.log("2. Upload próba:", variant.name);
+    console.log("Payload:");
+    console.log(JSON.stringify(variant.payload, null, 2));
+    console.log("----------");
 
-  const uploadResponse = await callTemu(
-    "temu.aftersales.upload.returnlabel",
-    variant.payload
-  );
+    const uploadResponse = await callTemu(
+      "temu.aftersales.upload.returnlabel",
+      variant.payload
+    );
 
-  console.log("Temu upload válasz:");
-  console.log(JSON.stringify(uploadResponse, null, 2));
-  console.log("----------");
+    console.log("Temu upload válasz:");
+    console.log(JSON.stringify(uploadResponse, null, 2));
+    console.log("----------");
 
-  if (isSuccess(uploadResponse)) {
-    console.log("SIKERES TEMU RETURN LABEL FELTÖLTÉS.");
-    console.log("Sikeres variant:", variant.name);
-    return;
+    if (isSuccess(uploadResponse)) {
+      console.log("SIKERES TEMU RETURN LABEL FELTÖLTÉS.");
+      console.log("Sikeres variant:", variant.name);
+      return;
+    }
+
+    console.log("Nem sikerült ezzel:", variant.name);
+    console.log("----------");
   }
 
-  console.log("Nem sikerült ezzel:", variant.name);
-  console.log("----------");
-}
-
-console.log("Egyik upload variant sem sikerült.");
-
+  console.log("Egyik upload variant sem sikerült.");
 }
 
 main().catch((error) => {
