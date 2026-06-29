@@ -76,13 +76,45 @@ async function callTemu(type, payload = {}) {
   return response.data;
 }
 
-function collectRows(obj, rows = []) {
+function cleanObject(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj
+      .map((item) => cleanObject(item))
+      .filter((item) => item !== null && item !== undefined && item !== "");
+  }
+
+  const cleaned = {};
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined || value === "") continue;
+
+    if (typeof value === "object") {
+      const nested = cleanObject(value);
+
+      if (
+        nested &&
+        typeof nested === "object" &&
+        Object.keys(nested).length > 0
+      ) {
+        cleaned[key] = nested;
+      }
+    } else {
+      cleaned[key] = value;
+    }
+  }
+
+  return cleaned;
+}
+
+function collectRows(obj, rows = [], pathName = "root") {
   if (!obj || typeof obj !== "object") return rows;
 
   if (Array.isArray(obj)) {
-    for (const item of obj) {
-      collectRows(item, rows);
-    }
+    obj.forEach((item, index) => {
+      collectRows(item, rows, `${pathName}[${index}]`);
+    });
 
     return rows;
   }
@@ -104,23 +136,36 @@ function collectRows(obj, rows = []) {
     text.includes("gls") ||
     text.includes("dpd") ||
     text.includes("dhl") ||
-    text.includes("ups");
+    text.includes("ups") ||
+    text.includes("warehouse") ||
+    text.includes("mallwarehouse");
 
-  if (looksUseful && keys.length <= 40) {
-    rows.push(obj);
+  if (looksUseful && keys.length <= 60) {
+    rows.push({
+      path: pathName,
+      value: obj,
+    });
   }
 
-  for (const value of Object.values(obj)) {
+  for (const [key, value] of Object.entries(obj)) {
     if (value && typeof value === "object") {
-      collectRows(value, rows);
+      collectRows(value, rows, `${pathName}.${key}`);
     }
   }
 
   return rows;
 }
 
+function isSuccess(response) {
+  return (
+    response?.success === true ||
+    response?.errorCode === 1000000 ||
+    response?.error_code === 1000000
+  );
+}
+
 async function main() {
-  console.log("Temu carrier lista teszt - request wrapper verzió");
+  console.log("Temu carrier lista teszt - mallWarehouseId verzió");
   console.log("parentOrderSn:", PARENT_ORDER_SN);
   console.log("parentAfterSalesSn:", PARENT_AFTER_SALES_SN);
   console.log("----------");
@@ -138,125 +183,220 @@ async function main() {
   console.log(JSON.stringify(prepareResponse, null, 2));
   console.log("----------");
 
-  const returnWarehouseId =
+  const mallWarehouseId =
     prepareResponse?.result?.availableReturnWarehouseList?.[0]?.warehouseId ||
     null;
 
-  console.log("returnWarehouseId:", returnWarehouseId || "-");
+  console.log("mallWarehouseId:", mallWarehouseId || "-");
   console.log("----------");
 
-  const baseRequest = {
+  const baseTopLevel = {
     parentOrderSn: PARENT_ORDER_SN,
     parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-    returnWarehouseId,
+    mallWarehouseId,
     countryCode: "HU",
   };
 
-  const minimalRequest = {
+  const baseMinimal = {
     parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-    returnWarehouseId,
+    mallWarehouseId,
+  };
+
+  const onlyWarehouse = {
+    mallWarehouseId,
   };
 
   const payloadVariants = [
     {
-      name: "request_base",
+      name: "mallWarehouseId_only",
       payload: {
-        request: baseRequest,
+        mallWarehouseId,
       },
     },
     {
-      name: "request_minimal",
+      name: "mallWarehouseId_with_order",
       payload: {
-        request: minimalRequest,
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        mallWarehouseId,
       },
     },
     {
-      name: "request_with_warehouseId",
+      name: "mallWarehouseId_country_hu",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        mallWarehouseId,
+        countryCode: "HU",
+      },
+    },
+    {
+      name: "mallWarehouseId_return_country_hu",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        mallWarehouseId,
+        returnCountryCode: "HU",
+      },
+    },
+    {
+      name: "request_mallWarehouseId_base",
+      payload: {
+        request: baseTopLevel,
+      },
+    },
+    {
+      name: "request_mallWarehouseId_minimal",
+      payload: {
+        request: baseMinimal,
+      },
+    },
+    {
+      name: "request_mallWarehouseId_only",
+      payload: {
+        request: onlyWarehouse,
+      },
+    },
+    {
+      name: "carrierGetRequest_mallWarehouseId_base",
+      payload: {
+        carrierGetRequest: baseTopLevel,
+      },
+    },
+    {
+      name: "carrierGetRequest_mallWarehouseId_minimal",
+      payload: {
+        carrierGetRequest: baseMinimal,
+      },
+    },
+    {
+      name: "carrierQueryRequest_mallWarehouseId_base",
+      payload: {
+        carrierQueryRequest: baseTopLevel,
+      },
+    },
+    {
+      name: "carrierQueryRequest_mallWarehouseId_minimal",
+      payload: {
+        carrierQueryRequest: baseMinimal,
+      },
+    },
+    {
+      name: "queryRequest_mallWarehouseId_base",
+      payload: {
+        queryRequest: baseTopLevel,
+      },
+    },
+    {
+      name: "queryRequest_mallWarehouseId_minimal",
+      payload: {
+        queryRequest: baseMinimal,
+      },
+    },
+    {
+      name: "param_mallWarehouseId_base",
+      payload: {
+        param: baseTopLevel,
+      },
+    },
+    {
+      name: "input_mallWarehouseId_base",
+      payload: {
+        input: baseTopLevel,
+      },
+    },
+
+    // Extra próbák, ha a Temu nem mallWarehouseId-t, hanem warehouse azonosítót vár más néven
+    {
+      name: "returnWarehouseId_and_mallWarehouseId",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        mallWarehouseId,
+        returnWarehouseId: mallWarehouseId,
+        countryCode: "HU",
+      },
+    },
+    {
+      name: "request_returnWarehouseId_and_mallWarehouseId",
       payload: {
         request: {
           parentOrderSn: PARENT_ORDER_SN,
           parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-          warehouseId: returnWarehouseId,
+          mallWarehouseId,
+          returnWarehouseId: mallWarehouseId,
           countryCode: "HU",
         },
       },
     },
     {
-      name: "request_only_aftersales",
+      name: "warehouseId_and_mallWarehouseId",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        mallWarehouseId,
+        warehouseId: mallWarehouseId,
+        countryCode: "HU",
+      },
+    },
+    {
+      name: "request_warehouseId_and_mallWarehouseId",
       payload: {
         request: {
+          parentOrderSn: PARENT_ORDER_SN,
           parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+          mallWarehouseId,
+          warehouseId: mallWarehouseId,
+          countryCode: "HU",
         },
       },
     },
+
+    // Ha a carrier.get pickup/label típushoz kötött paramétert vár
     {
-      name: "request_only_warehouse",
+      name: "mallWarehouseId_returnLabelType",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        mallWarehouseId,
+        returnLabelType: 1,
+      },
+    },
+    {
+      name: "request_mallWarehouseId_returnLabelType",
       payload: {
         request: {
-          returnWarehouseId,
+          parentOrderSn: PARENT_ORDER_SN,
+          parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+          mallWarehouseId,
+          returnLabelType: 1,
         },
       },
     },
     {
-      name: "carrierGetRequest_base",
+      name: "mallWarehouseId_deliveryType",
       payload: {
-        carrierGetRequest: baseRequest,
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        mallWarehouseId,
+        deliveryType: 1,
       },
     },
     {
-      name: "carrierGetRequest_minimal",
+      name: "request_mallWarehouseId_deliveryType",
       payload: {
-        carrierGetRequest: minimalRequest,
+        request: {
+          parentOrderSn: PARENT_ORDER_SN,
+          parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+          mallWarehouseId,
+          deliveryType: 1,
+        },
       },
     },
-    {
-      name: "carrierQueryRequest_base",
-      payload: {
-        carrierQueryRequest: baseRequest,
-      },
-    },
-    {
-      name: "carrierQueryRequest_minimal",
-      payload: {
-        carrierQueryRequest: minimalRequest,
-      },
-    },
-    {
-      name: "param_base",
-      payload: {
-        param: baseRequest,
-      },
-    },
-    {
-      name: "input_base",
-      payload: {
-        input: baseRequest,
-      },
-    },
-  ].map((variant) => {
-    function clean(obj) {
-      if (!obj || typeof obj !== "object") return obj;
-
-      const cleaned = {};
-
-      for (const [key, value] of Object.entries(obj)) {
-        if (value === null || value === undefined || value === "") continue;
-
-        if (typeof value === "object" && !Array.isArray(value)) {
-          cleaned[key] = clean(value);
-        } else {
-          cleaned[key] = value;
-        }
-      }
-
-      return cleaned;
-    }
-
-    return {
-      name: variant.name,
-      payload: clean(variant.payload),
-    };
-  });
+  ].map((variant) => ({
+    name: variant.name,
+    payload: cleanObject(variant.payload),
+  }));
 
   console.log("2. Carrier lista próbák...");
   console.log("----------");
@@ -278,11 +418,11 @@ async function main() {
       const rows = collectRows(response);
 
       if (rows.length > 0) {
-        console.log("Lehetséges carrier sorok:");
+        console.log("Lehetséges carrier / warehouse sorok:");
         console.log(JSON.stringify(rows, null, 2));
       }
 
-      if (response?.success === true || response?.errorCode === 1000000) {
+      if (isSuccess(response)) {
         console.log("SIKERES carrier.get változat:", variant.name);
       }
 
@@ -300,6 +440,8 @@ async function main() {
       console.log("----------");
     }
   }
+
+  console.log("Carrier teszt vége.");
 }
 
 main().catch((error) => {
