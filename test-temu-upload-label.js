@@ -152,27 +152,83 @@ async function main() {
   console.log("mallWarehouseId:", mallWarehouseId);
   console.log("----------");
 
-const payload = {
-  parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-  parentOrderSn: PARENT_ORDER_SN,
-  latestTimestamp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
-  returnLabelDTOList: [
-      {
-        mallWarehouseId,
-        returnLabelUrl,
-        carrierId: Number(TEMU_PACKETA_CARRIER_ID),
-        trackingNumber: TRACKING_NUMBER,
-      },
-    ],
-  };
+const baseDtoNumberCarrier = {
+  mallWarehouseId,
+  returnLabelUrl,
+  carrierId: Number(TEMU_PACKETA_CARRIER_ID),
+  trackingNumber: TRACKING_NUMBER,
+};
 
-  console.log("2. Upload payload:");
-  console.log(JSON.stringify(payload, null, 2));
+const baseDtoStringCarrier = {
+  mallWarehouseId,
+  returnLabelUrl,
+  carrierId: String(TEMU_PACKETA_CARRIER_ID),
+  trackingNumber: TRACKING_NUMBER,
+};
+
+const now = Math.floor(Date.now() / 1000);
+const in7Days = now + 7 * 24 * 60 * 60;
+
+const uploadVariants = [
+  {
+    name: "variant_1_base_number_carrier",
+    payload: {
+      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+      parentOrderSn: PARENT_ORDER_SN,
+      returnLabelDTOList: [baseDtoNumberCarrier],
+    },
+  },
+  {
+    name: "variant_2_latest_number_carrier",
+    payload: {
+      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+      parentOrderSn: PARENT_ORDER_SN,
+      latestTimestamp: in7Days,
+      returnLabelDTOList: [baseDtoNumberCarrier],
+    },
+  },
+  {
+    name: "variant_3_string_carrier",
+    payload: {
+      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+      parentOrderSn: PARENT_ORDER_SN,
+      latestTimestamp: in7Days,
+      returnLabelDTOList: [baseDtoStringCarrier],
+    },
+  },
+  {
+    name: "variant_4_pickup_mode_1",
+    payload: {
+      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+      parentOrderSn: PARENT_ORDER_SN,
+      pickUpTimeScheduleMode: 1,
+      latestTimestamp: in7Days,
+      returnLabelDTOList: [baseDtoNumberCarrier],
+    },
+  },
+  {
+    name: "variant_5_pickup_start_end",
+    payload: {
+      parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+      parentOrderSn: PARENT_ORDER_SN,
+      pickUpTimeScheduleMode: 1,
+      startTimestamp: now + 24 * 60 * 60,
+      endTimestamp: in7Days,
+      latestTimestamp: in7Days,
+      returnLabelDTOList: [baseDtoNumberCarrier],
+    },
+  },
+];
+
+for (const variant of uploadVariants) {
+  console.log("2. Upload próba:", variant.name);
+  console.log("Payload:");
+  console.log(JSON.stringify(variant.payload, null, 2));
   console.log("----------");
 
   const uploadResponse = await callTemu(
     "temu.aftersales.upload.returnlabel",
-    payload
+    variant.payload
   );
 
   console.log("Temu upload válasz:");
@@ -181,10 +237,16 @@ const payload = {
 
   if (isSuccess(uploadResponse)) {
     console.log("SIKERES TEMU RETURN LABEL FELTÖLTÉS.");
+    console.log("Sikeres variant:", variant.name);
     return;
   }
 
-  console.log("Nem sikerült a Temu return label feltöltés.");
+  console.log("Nem sikerült ezzel:", variant.name);
+  console.log("----------");
+}
+
+console.log("Egyik upload variant sem sikerült.");
+
 }
 
 main().catch((error) => {
