@@ -151,6 +151,7 @@ async function main() {
 
   console.log("mallWarehouseId:", mallWarehouseId);
   console.log("----------");
+  const logisticsWarehouseId = "WH-08329939107980321";
 
 const baseDtoNumberCarrier = {
   mallWarehouseId,
@@ -279,6 +280,21 @@ const uploadVariants = [
       },
     },
   },
+{
+  name: "variant_7_logistics_warehouse_id",
+  payload: {
+    parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+    parentOrderSn: PARENT_ORDER_SN,
+    returnLabelDTOList: [
+      {
+        mallWarehouseId: logisticsWarehouseId,
+        returnLabelUrl,
+        carrierId: Number(TEMU_PACKETA_CARRIER_ID),
+        trackingNumber: TRACKING_NUMBER,
+      },
+    ],
+  },
+},
 ];
 
 for (const variant of uploadVariants) {
