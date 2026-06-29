@@ -98,9 +98,15 @@ function collectRows(obj, rows = []) {
     text.includes("carrier") ||
     text.includes("logistics") ||
     text.includes("provider") ||
-    text.includes("service");
+    text.includes("service") ||
+    text.includes("shipping") ||
+    text.includes("express") ||
+    text.includes("gls") ||
+    text.includes("dpd") ||
+    text.includes("dhl") ||
+    text.includes("ups");
 
-  if (looksUseful && keys.length <= 30) {
+  if (looksUseful && keys.length <= 40) {
     rows.push(obj);
   }
 
@@ -114,7 +120,7 @@ function collectRows(obj, rows = []) {
 }
 
 async function main() {
-  console.log("Temu carrier lista teszt");
+  console.log("Temu carrier lista teszt - request wrapper verzió");
   console.log("parentOrderSn:", PARENT_ORDER_SN);
   console.log("parentAfterSalesSn:", PARENT_AFTER_SALES_SN);
   console.log("----------");
@@ -139,119 +145,116 @@ async function main() {
   console.log("returnWarehouseId:", returnWarehouseId || "-");
   console.log("----------");
 
+  const baseRequest = {
+    parentOrderSn: PARENT_ORDER_SN,
+    parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+    returnWarehouseId,
+    countryCode: "HU",
+  };
+
+  const minimalRequest = {
+    parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+    returnWarehouseId,
+  };
+
   const payloadVariants = [
     {
-      name: "returnWarehouseId_only",
+      name: "request_base",
       payload: {
-        returnWarehouseId,
+        request: baseRequest,
       },
     },
     {
-      name: "warehouseId_only",
+      name: "request_minimal",
       payload: {
-        warehouseId: returnWarehouseId,
+        request: minimalRequest,
       },
     },
     {
-      name: "returnWarehouseId_with_order",
+      name: "request_with_warehouseId",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        returnWarehouseId,
+        request: {
+          parentOrderSn: PARENT_ORDER_SN,
+          parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+          warehouseId: returnWarehouseId,
+          countryCode: "HU",
+        },
       },
     },
     {
-      name: "warehouseId_with_order",
+      name: "request_only_aftersales",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        warehouseId: returnWarehouseId,
+        request: {
+          parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        },
       },
     },
     {
-      name: "returnWarehouseId_country_hu",
+      name: "request_only_warehouse",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        returnWarehouseId,
-        countryCode: "HU",
+        request: {
+          returnWarehouseId,
+        },
       },
     },
     {
-      name: "warehouseId_country_hu",
+      name: "carrierGetRequest_base",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        warehouseId: returnWarehouseId,
-        countryCode: "HU",
+        carrierGetRequest: baseRequest,
       },
     },
     {
-      name: "returnWarehouseId_region_hu",
+      name: "carrierGetRequest_minimal",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        returnWarehouseId,
-        regionCode: "HU",
+        carrierGetRequest: minimalRequest,
       },
     },
     {
-      name: "warehouseId_region_hu",
+      name: "carrierQueryRequest_base",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        warehouseId: returnWarehouseId,
-        regionCode: "HU",
+        carrierQueryRequest: baseRequest,
       },
     },
     {
-      name: "returnWarehouseId_destinationCountryCode",
+      name: "carrierQueryRequest_minimal",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        returnWarehouseId,
-        destinationCountryCode: "HU",
+        carrierQueryRequest: minimalRequest,
       },
     },
     {
-      name: "warehouseId_destinationCountryCode",
+      name: "param_base",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        warehouseId: returnWarehouseId,
-        destinationCountryCode: "HU",
+        param: baseRequest,
       },
     },
     {
-      name: "returnWarehouseId_returnCountryCode",
+      name: "input_base",
       payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        returnWarehouseId,
-        returnCountryCode: "HU",
-      },
-    },
-    {
-      name: "warehouseId_returnCountryCode",
-      payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        warehouseId: returnWarehouseId,
-        returnCountryCode: "HU",
+        input: baseRequest,
       },
     },
   ].map((variant) => {
-    const cleanedPayload = {};
+    function clean(obj) {
+      if (!obj || typeof obj !== "object") return obj;
 
-    for (const [key, value] of Object.entries(variant.payload)) {
-      if (value !== null && value !== undefined && value !== "") {
-        cleanedPayload[key] = value;
+      const cleaned = {};
+
+      for (const [key, value] of Object.entries(obj)) {
+        if (value === null || value === undefined || value === "") continue;
+
+        if (typeof value === "object" && !Array.isArray(value)) {
+          cleaned[key] = clean(value);
+        } else {
+          cleaned[key] = value;
+        }
       }
+
+      return cleaned;
     }
 
     return {
       name: variant.name,
-      payload: cleanedPayload,
+      payload: clean(variant.payload),
     };
   });
 
