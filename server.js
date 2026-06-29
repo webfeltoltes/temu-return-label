@@ -74,6 +74,59 @@ async function callTemu(type, payload = {}, accessToken = TEMU_ACCESS_TOKEN) {
   return response.data;
 }
 
+function findFirstValueByKeyDeep(obj, keyNames) {
+  if (!obj || typeof obj !== "object") return null;
+
+  for (const [key, value] of Object.entries(obj)) {
+    const normalizedKey = key.toLowerCase();
+
+    if (keyNames.some((k) => normalizedKey.includes(k.toLowerCase()))) {
+      if (value !== null && value !== undefined && value !== "") {
+        return value;
+      }
+    }
+
+    if (typeof value === "object") {
+      const found = findFirstValueByKeyDeep(value, keyNames);
+      if (found !== null && found !== undefined && found !== "") {
+        return found;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getRefundAmount(afterSalesDetailResult) {
+  const result = afterSalesDetailResult?.result || {};
+
+  const buyerTotalRefund = result?.refundSummary?.buyerTotalRefund;
+  if (buyerTotalRefund?.amount !== undefined) {
+    return {
+      value: buyerTotalRefund.amount,
+      currency: buyerTotalRefund.currency || null,
+      source: "refundSummary.buyerTotalRefund",
+    };
+  }
+
+  const firstAfterSales = result?.afterSalesList?.[0];
+  const applyRefundAmount = firstAfterSales?.applyRefundAmount;
+
+  if (applyRefundAmount?.amount !== undefined) {
+    return {
+      value: applyRefundAmount.amount,
+      currency: applyRefundAmount.currency || null,
+      source: "afterSalesList[0].applyRefundAmount",
+    };
+  }
+
+  return {
+    value: null,
+    currency: null,
+    source: null,
+  };
+}
+
 app.get("/", (req, res) => {
   res.send(`
     <h2>Temu return_label app működik.</h2>
@@ -85,7 +138,13 @@ app.get("/", (req, res) => {
     <code>/temu/aftersales-test</code>
 
     <p>Aftersales részletek:</p>
-    <code>/temu/aftersales-detail?parentAfterSalesSn=PO-090-12329685781113212-D01</code>
+    <code>/temu/aftersales-detail?parentOrderSn=PO-090-12329685781113212&parentAfterSalesSn=PO-090-12329685781113212-D01</code>
+
+    <p>Order detail:</p>
+    <code>/temu/order-detail?parentOrderSn=PO-090-12329685781113212</code>
+
+    <p>Packeta adat teszt:</p>
+    <code>/temu/packeta-data?parentOrderSn=PO-090-12329685781113212&parentAfterSalesSn=PO-090-12329685781113212-D01</code>
 
     <p>Callback URL:</p>
     <code>/temu/callback?code=TESZT</code>
@@ -146,23 +205,17 @@ app.get("/temu/callback", async (req, res) => {
 app.get("/temu/token-info", async (req, res) => {
   try {
     const result = await callTemu("bg.open.accesstoken.info.get");
-
     res.json(result);
   } catch (error) {
     console.error("Token info hiba:");
 
     if (error.response) {
-      console.error("HTTP status:", error.response.status);
-      console.dir(error.response.data, { depth: null });
-
       return res.status(500).json({
         message: "Temu token info hiba.",
         status: error.response.status,
         data: error.response.data,
       });
     }
-
-    console.error(error.message);
 
     res.status(500).json({
       message: "Temu token info hiba.",
@@ -228,17 +281,12 @@ app.get("/temu/aftersales-test", async (req, res) => {
     console.error("Aftersales lista hiba:");
 
     if (error.response) {
-      console.error("HTTP status:", error.response.status);
-      console.dir(error.response.data, { depth: null });
-
       return res.status(500).json({
         message: "Temu aftersales lista hiba.",
         status: error.response.status,
         data: error.response.data,
       });
     }
-
-    console.error(error.message);
 
     res.status(500).json({
       message: "Temu aftersales lista hiba.",
@@ -249,22 +297,22 @@ app.get("/temu/aftersales-test", async (req, res) => {
 
 app.get("/temu/aftersales-detail", async (req, res) => {
   try {
+    const parentOrderSn = req.query.parentOrderSn;
     const parentAfterSalesSn = req.query.parentAfterSalesSn;
 
-    if (!parentAfterSalesSn) {
+    if (!parentOrderSn || !parentAfterSalesSn) {
       return res.status(400).json({
-        message: "Hiányzik a parentAfterSalesSn paraméter.",
+        message: "Hiányzik a parentOrderSn vagy parentAfterSalesSn paraméter.",
         example:
-          "/temu/aftersales-detail?parentAfterSalesSn=PO-090-12329685781113212-D01",
+          "/temu/aftersales-detail?parentOrderSn=PO-090-12329685781113212&parentAfterSalesSn=PO-090-12329685781113212-D01",
       });
     }
 
     const result = await callTemu(
       "temu.aftersales.parentaftersales.detail.get",
       {
-        request: {
-          parentAfterSalesSn,
-        },
+        parentOrderSn,
+        parentAfterSalesSn,
       }
     );
 
@@ -273,9 +321,6 @@ app.get("/temu/aftersales-detail", async (req, res) => {
     console.error("Aftersales detail hiba:");
 
     if (error.response) {
-      console.error("HTTP status:", error.response.status);
-      console.dir(error.response.data, { depth: null });
-
       return res.status(500).json({
         message: "Temu aftersales detail hiba.",
         status: error.response.status,
@@ -283,10 +328,115 @@ app.get("/temu/aftersales-detail", async (req, res) => {
       });
     }
 
-    console.error(error.message);
-
     res.status(500).json({
       message: "Temu aftersales detail hiba.",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/temu/order-detail", async (req, res) => {
+  try {
+    const parentOrderSn = req.query.parentOrderSn;
+
+    if (!parentOrderSn) {
+      return res.status(400).json({
+        message: "Hiányzik a parentOrderSn paraméter.",
+        example: "/temu/order-detail?parentOrderSn=PO-090-12329685781113212",
+      });
+    }
+
+    const result = await callTemu("bg.order.detail.get", {
+      parentOrderSn,
+      fulfillmentTypeList: ["fulfillBySeller"],
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Order detail hiba:");
+
+    if (error.response) {
+      return res.status(500).json({
+        message: "Temu order detail hiba.",
+        status: error.response.status,
+        data: error.response.data,
+      });
+    }
+
+    res.status(500).json({
+      message: "Temu order detail hiba.",
+      error: error.message,
+    });
+  }
+});
+
+app.get("/temu/packeta-data", async (req, res) => {
+  try {
+    const parentOrderSn = req.query.parentOrderSn;
+    const parentAfterSalesSn = req.query.parentAfterSalesSn;
+
+    if (!parentOrderSn || !parentAfterSalesSn) {
+      return res.status(400).json({
+        message: "Hiányzik a parentOrderSn vagy parentAfterSalesSn paraméter.",
+        example:
+          "/temu/packeta-data?parentOrderSn=PO-090-12329685781113212&parentAfterSalesSn=PO-090-12329685781113212-D01",
+      });
+    }
+
+    const afterSalesDetail = await callTemu(
+      "temu.aftersales.parentaftersales.detail.get",
+      {
+        parentOrderSn,
+        parentAfterSalesSn,
+      }
+    );
+
+    const orderDetail = await callTemu("bg.order.detail.get", {
+      parentOrderSn,
+      fulfillmentTypeList: ["fulfillBySeller"],
+    });
+
+    const refund = getRefundAmount(afterSalesDetail);
+
+    const customerEmail =
+      findFirstValueByKeyDeep(orderDetail, ["email", "mail"]) ||
+      findFirstValueByKeyDeep(afterSalesDetail, ["email", "mail"]);
+
+    const customerPhone =
+      findFirstValueByKeyDeep(orderDetail, ["phone", "mobile", "tel"]) ||
+      findFirstValueByKeyDeep(afterSalesDetail, ["phone", "mobile", "tel"]);
+
+    res.json({
+      success: true,
+      packetaData: {
+        orderNumber: parentOrderSn,
+        parentAfterSalesSn,
+        value: refund.value,
+        currency: refund.currency,
+        customerEmail,
+        customerPhone,
+      },
+      debug: {
+        refundSource: refund.source,
+        afterSalesSuccess: afterSalesDetail.success,
+        orderDetailSuccess: orderDetail.success,
+        afterSalesDetail,
+        orderDetail,
+      },
+    });
+  } catch (error) {
+    console.error("Packeta adat hiba:");
+
+    if (error.response) {
+      return res.status(500).json({
+        message: "Packeta adat összeállítás hiba.",
+        status: error.response.status,
+        data: error.response.data,
+      });
+    }
+
+    res.status(500).json({
+      message: "Packeta adat összeállítás hiba.",
       error: error.message,
     });
   }
