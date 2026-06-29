@@ -247,9 +247,14 @@ app.get("/temu/aftersales-detail", async (req, res) => {
       });
     }
 
-    const result = await callTemu("temu.aftersales.parentaftersales.detail.get", {
-      parentAfterSalesSn,
-    });
+    const result = await callTemu(
+      "temu.aftersales.parentaftersales.detail.get",
+      {
+        request: {
+          parentAfterSalesSn,
+        },
+      }
+    );
 
     res.json(result);
   } catch (error) {
