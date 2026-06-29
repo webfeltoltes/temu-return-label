@@ -65,10 +65,16 @@ async function callTemu(type, payload = {}, accessToken = TEMU_ACCESS_TOKEN) {
 app.get("/", (req, res) => {
   res.send(`
     <h2>Temu return_label app működik.</h2>
+
     <p>Token teszt:</p>
     <code>/temu/token-info</code>
+
+    <p>Aftersales teszt:</p>
+    <code>/temu/aftersales-test</code>
+
     <p>Callback URL:</p>
     <code>/temu/callback?code=TESZT</code>
+
     <p>Webhook endpoint:</p>
     <code>/temu/webhook</code>
   `);
@@ -149,6 +155,7 @@ app.get("/temu/token-info", async (req, res) => {
     });
   }
 });
+
 app.get("/temu/aftersales-test", async (req, res) => {
   try {
     const now = Math.floor(Date.now() / 1000);
@@ -161,7 +168,24 @@ app.get("/temu/aftersales-test", async (req, res) => {
       updateAtEnd: now,
     });
 
-    res.json(result);
+    const allData = result?.result?.data || [];
+
+    const labelNeeded = allData.filter((item) => {
+      return item.parentAfterSalesStatus === 8;
+    });
+
+    res.json({
+      success: result.success,
+      requestId: result.requestId,
+      errorCode: result.errorCode,
+      errorMsg: result.errorMsg,
+      totalFromTemu: result?.result?.total || 0,
+      pageNumber: result?.result?.pageNumber || 1,
+      returnedCount: allData.length,
+      labelNeededCount: labelNeeded.length,
+      labelNeeded,
+      allData,
+    });
   } catch (error) {
     console.error("Aftersales lista hiba:");
 
@@ -184,6 +208,7 @@ app.get("/temu/aftersales-test", async (req, res) => {
     });
   }
 });
+
 app.post("/temu/webhook", async (req, res) => {
   console.log("Temu webhook érkezett");
   console.log("Headers:", req.headers);
