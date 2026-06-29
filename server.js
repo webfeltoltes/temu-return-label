@@ -161,26 +161,46 @@ app.get("/temu/aftersales-test", async (req, res) => {
     const now = Math.floor(Date.now() / 1000);
     const thirtyDaysAgo = now - 30 * 24 * 60 * 60;
 
-    const result = await callTemu("bg.aftersales.parentaftersales.list.get", {
-      pageNo: 1,
-      pageSize: 20,
-      updateAtStart: thirtyDaysAgo,
-      updateAtEnd: now,
-    });
+    const pageSize = 200;
+    let pageNo = 1;
+    let allData = [];
+    let hasMore = true;
 
-    const allData = result?.result?.data || [];
+    while (hasMore && pageNo <= 20) {
+      const result = await callTemu("bg.aftersales.parentaftersales.list.get", {
+        pageNo,
+        pageSize,
+        updateAtStart: thirtyDaysAgo,
+        updateAtEnd: now,
+        afterSalesStatusGroup: 1,
+      });
+
+      if (!result.success) {
+        return res.json({
+          success: false,
+          pageNo,
+          result,
+        });
+      }
+
+      const data = result?.result?.data || [];
+
+      allData = allData.concat(data);
+
+      if (data.length < pageSize) {
+        hasMore = false;
+      } else {
+        pageNo++;
+      }
+    }
 
     const labelNeeded = allData.filter((item) => {
       return item.parentAfterSalesStatus === 8;
     });
 
     res.json({
-      success: result.success,
-      requestId: result.requestId,
-      errorCode: result.errorCode,
-      errorMsg: result.errorMsg,
-      totalFromTemu: result?.result?.total || 0,
-      pageNumber: result?.result?.pageNumber || 1,
+      success: true,
+      checkedPages: pageNo,
       returnedCount: allData.length,
       labelNeededCount: labelNeeded.length,
       labelNeeded,
