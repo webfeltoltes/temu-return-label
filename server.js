@@ -74,74 +74,17 @@ async function callTemu(type, payload = {}, accessToken = TEMU_ACCESS_TOKEN) {
   return response.data;
 }
 
-function isEmail(value) {
-  if (typeof value !== "string") return false;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
-function isPhoneLike(value) {
-  if (typeof value !== "string") return false;
-
-  const cleaned = value.replace(/[^\d+]/g, "");
-
-  if (cleaned.length < 7) return false;
-  if (cleaned.length > 20) return false;
-
-  return true;
-}
-
-function findEmailDeep(obj) {
-  if (!obj || typeof obj !== "object") return null;
-
-  for (const [key, value] of Object.entries(obj)) {
-    const normalizedKey = key.toLowerCase();
-
-    if (
-      (normalizedKey.includes("email") || normalizedKey.includes("mail")) &&
-      isEmail(value)
-    ) {
-      return value.trim();
-    }
-
-    if (typeof value === "object") {
-      const found = findEmailDeep(value);
-      if (found) return found;
-    }
-  }
-
-  return null;
-}
-
-function findPhoneDeep(obj) {
-  if (!obj || typeof obj !== "object") return null;
-
-  for (const [key, value] of Object.entries(obj)) {
-    const normalizedKey = key.toLowerCase();
-
-    if (
-      (normalizedKey.includes("phone") ||
-        normalizedKey.includes("mobile") ||
-        normalizedKey.includes("tel")) &&
-      isPhoneLike(value)
-    ) {
-      return value.trim();
-    }
-
-    if (typeof value === "object") {
-      const found = findPhoneDeep(value);
-      if (found) return found;
-    }
-  }
-
-  return null;
-}
-
 function normalizeTemuAmount(amount) {
   if (amount === null || amount === undefined) return null;
 
   const numericAmount = Number(amount);
 
-  if (Number.isNaN(numericAmount)) return amount;
+  if (Number.isNaN(numericAmount)) {
+    return {
+      raw: amount,
+      dividedBy100: null,
+    };
+  }
 
   return {
     raw: numericAmount,
@@ -155,9 +98,11 @@ function getRefundAmount(afterSalesDetailResult) {
   const buyerTotalRefund = result?.refundSummary?.buyerTotalRefund;
 
   if (buyerTotalRefund?.amount !== undefined) {
+    const normalized = normalizeTemuAmount(buyerTotalRefund.amount);
+
     return {
-      valueRaw: buyerTotalRefund.amount,
-      valueDividedBy100: normalizeTemuAmount(buyerTotalRefund.amount)?.dividedBy100,
+      valueRaw: normalized.raw,
+      valueDividedBy100: normalized.dividedBy100,
       currency: buyerTotalRefund.currency || null,
       source: "refundSummary.buyerTotalRefund",
     };
@@ -167,9 +112,11 @@ function getRefundAmount(afterSalesDetailResult) {
   const applyRefundAmount = firstAfterSales?.applyRefundAmount;
 
   if (applyRefundAmount?.amount !== undefined) {
+    const normalized = normalizeTemuAmount(applyRefundAmount.amount);
+
     return {
-      valueRaw: applyRefundAmount.amount,
-      valueDividedBy100: normalizeTemuAmount(applyRefundAmount.amount)?.dividedBy100,
+      valueRaw: normalized.raw,
+      valueDividedBy100: normalized.dividedBy100,
       currency: applyRefundAmount.currency || null,
       source: "afterSalesList[0].applyRefundAmount",
     };
@@ -236,6 +183,120 @@ async function getOrderDetailV2(parentOrderSn) {
   };
 }
 
+async function getShippingInfo(parentOrderSn) {
+  const attempts = [];
+
+  const attempt1 = await callTemu("bg.order.shippinginfo.v2.get", {
+    parentOrderSn,
+  });
+
+  attempts.push({
+    type: "bg.order.shippinginfo.v2.get",
+    mode: "top-level",
+    response: attempt1,
+  });
+
+  if (attempt1.success) {
+    return {
+      success: true,
+      usedType: "bg.order.shippinginfo.v2.get",
+      usedMode: "top-level",
+      result: attempt1,
+      attempts,
+    };
+  }
+
+  const attempt2 = await callTemu("bg.order.shippinginfo.v2.get", {
+    request: {
+      parentOrderSn,
+    },
+  });
+
+  attempts.push({
+    type: "bg.order.shippinginfo.v2.get",
+    mode: "request-wrapper",
+    response: attempt2,
+  });
+
+  if (attempt2.success) {
+    return {
+      success: true,
+      usedType: "bg.order.shippinginfo.v2.get",
+      usedMode: "request-wrapper",
+      result: attempt2,
+      attempts,
+    };
+  }
+
+  const attempt3 = await callTemu("bg.order.decryptshippinginfo.get", {
+    parentOrderSn,
+  });
+
+  attempts.push({
+    type: "bg.order.decryptshippinginfo.get",
+    mode: "top-level",
+    response: attempt3,
+  });
+
+  if (attempt3.success) {
+    return {
+      success: true,
+      usedType: "bg.order.decryptshippinginfo.get",
+      usedMode: "top-level",
+      result: attempt3,
+      attempts,
+    };
+  }
+
+  const attempt4 = await callTemu("bg.order.decryptshippinginfo.get", {
+    request: {
+      parentOrderSn,
+    },
+  });
+
+  attempts.push({
+    type: "bg.order.decryptshippinginfo.get",
+    mode: "request-wrapper",
+    response: attempt4,
+  });
+
+  if (attempt4.success) {
+    return {
+      success: true,
+      usedType: "bg.order.decryptshippinginfo.get",
+      usedMode: "request-wrapper",
+      result: attempt4,
+      attempts,
+    };
+  }
+
+  return {
+    success: false,
+    usedType: null,
+    usedMode: null,
+    result: attempt4,
+    attempts,
+  };
+}
+
+function extractShippingFields(shippingInfo) {
+  const result = shippingInfo?.result?.result || shippingInfo?.result || {};
+
+  return {
+    customerEmail: result.mail || null,
+    customerPhone: result.mobile || result.backupMobile || null,
+    customerName: result.receiptName || null,
+    country: result.regionName1 || null,
+    county: result.regionName2 || null,
+    city: result.regionName3 || null,
+    postCode: result.postCode || null,
+    addressLineAll: result.addressLineAll || null,
+    addressLine1: result.addressLine1 || null,
+    addressLine2: result.addressLine2 || null,
+    addressLine3: result.addressLine3 || null,
+  };
+}
+
 app.get("/", (req, res) => {
   res.send(`
     <h2>Temu return_label app működik.</h2>
@@ -251,6 +312,9 @@ app.get("/", (req, res) => {
 
     <p>Order detail V2:</p>
     <code>/temu/order-detail?parentOrderSn=PO-090-12329685781113212</code>
+
+    <p>Shipping info:</p>
+    <code>/temu/shipping-info?parentOrderSn=PO-090-12329685781113212</code>
 
     <p>Packeta adat teszt:</p>
     <code>/temu/packeta-data?parentOrderSn=PO-090-12329685781113212&parentAfterSalesSn=PO-090-12329685781113212-D01</code>
@@ -452,6 +516,43 @@ app.get("/temu/order-detail", async (req, res) => {
   }
 });
 
+app.get("/temu/shipping-info", async (req, res) => {
+  try {
+    const parentOrderSn = req.query.parentOrderSn;
+
+    if (!parentOrderSn) {
+      return res.status(400).json({
+        message: "Hiányzik a parentOrderSn paraméter.",
+        example: "/temu/shipping-info?parentOrderSn=PO-090-12329685781113212",
+      });
+    }
+
+    const shippingInfo = await getShippingInfo(parentOrderSn);
+    const shippingFields = extractShippingFields(shippingInfo);
+
+    res.json({
+      success: shippingInfo.success,
+      usedType: shippingInfo.usedType,
+      usedMode: shippingInfo.usedMode,
+      shippingFields,
+      debug: shippingInfo,
+    });
+  } catch (error) {
+    if (error.response) {
+      return res.status(500).json({
+        message: "Temu shipping info hiba.",
+        status: error.response.status,
+        data: error.response.data,
+      });
+    }
+
+    res.status(500).json({
+      message: "Temu shipping info hiba.",
+      error: error.message,
+    });
+  }
+});
+
 app.get("/temu/packeta-data", async (req, res) => {
   try {
     const parentOrderSn = req.query.parentOrderSn;
@@ -474,35 +575,44 @@ app.get("/temu/packeta-data", async (req, res) => {
     );
 
     const orderDetail = await getOrderDetailV2(parentOrderSn);
+    const shippingInfo = await getShippingInfo(parentOrderSn);
 
     const refund = getRefundAmount(afterSalesDetail);
-
-    const customerEmail =
-      findEmailDeep(orderDetail?.result) || findEmailDeep(afterSalesDetail);
-
-    const customerPhone =
-      findPhoneDeep(orderDetail?.result) || findPhoneDeep(afterSalesDetail);
+    const shippingFields = extractShippingFields(shippingInfo);
 
     res.json({
       success: true,
       packetaData: {
         orderNumber: parentOrderSn,
         parentAfterSalesSn,
+        value: refund.valueDividedBy100,
         valueRaw: refund.valueRaw,
-        valueDividedBy100: refund.valueDividedBy100,
         currency: refund.currency,
-        customerEmail,
-        customerPhone,
+        customerEmail: shippingFields.customerEmail,
+        customerPhone: shippingFields.customerPhone,
+        customerName: shippingFields.customerName,
       },
-      note:
-        "Ha valueRaw 2254400, akkor a Packetába valószínűleg a valueDividedBy100 érték kell: 22544.",
+      shippingAddressDebug: {
+        country: shippingFields.country,
+        county: shippingFields.county,
+        city: shippingFields.city,
+        postCode: shippingFields.postCode,
+        addressLineAll: shippingFields.addressLineAll,
+        addressLine1: shippingFields.addressLine1,
+        addressLine2: shippingFields.addressLine2,
+        addressLine3: shippingFields.addressLine3,
+      },
       debug: {
         refundSource: refund.source,
         afterSalesSuccess: afterSalesDetail.success,
         orderDetailSuccess: orderDetail.success,
         orderDetailUsedMode: orderDetail.usedMode,
+        shippingInfoSuccess: shippingInfo.success,
+        shippingInfoUsedType: shippingInfo.usedType,
+        shippingInfoUsedMode: shippingInfo.usedMode,
         afterSalesDetail,
         orderDetail,
+        shippingInfo,
       },
     });
   } catch (error) {
