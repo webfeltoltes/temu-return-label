@@ -4,7 +4,6 @@ const axios = require("axios");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const FormData = require("form-data");
 
 const {
   TEMU_APP_KEY,
@@ -88,42 +87,6 @@ async function callTemu(type, payload = {}) {
   return response.data;
 }
 
-function findValueByKeys(obj, keys) {
-  if (!obj || typeof obj !== "object") return null;
-
-  for (const key of keys) {
-    if (obj[key]) return obj[key];
-  }
-
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      const found = findValueByKeys(value, keys);
-      if (found) return found;
-    }
-  }
-
-  return null;
-}
-
-function findObjectWithKeys(obj, requiredKeys) {
-  if (!obj || typeof obj !== "object") return null;
-
-  const hasAll = requiredKeys.every((key) => obj[key] !== undefined);
-
-  if (hasAll) {
-    return obj;
-  }
-
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      const found = findObjectWithKeys(value, requiredKeys);
-      if (found) return found;
-    }
-  }
-
-  return null;
-}
-
 function isTemuSuccess(response) {
   if (!response || typeof response !== "object") return false;
 
@@ -149,194 +112,189 @@ function getTemuErrorMessage(response) {
   );
 }
 
-async function uploadUsingSignatureResponse(signatureResponse, filePath) {
-  const result = signatureResponse?.result || signatureResponse;
+function findValueByKeys(obj, keys) {
+  if (!obj || typeof obj !== "object") return null;
 
-  const uploadUrl =
-    findValueByKeys(result, [
-      "uploadUrl",
-      "upload_url",
-      "url",
-      "fileUploadUrl",
-      "file_upload_url",
-      "host",
-      "endpoint",
-    ]) || null;
-
-  if (!uploadUrl) {
-    console.log("A signature.get válaszban nem találtam upload URL-t.");
-    return null;
+  for (const key of keys) {
+    if (obj[key]) return obj[key];
   }
 
-  console.log("Talált upload URL:");
-  console.log(uploadUrl);
-
-  const fileFieldName =
-    findValueByKeys(result, [
-      "fileFieldName",
-      "file_field_name",
-      "fileNameField",
-      "file_name_field",
-    ]) || "file";
-
-  const knownFieldNames = [
-    "key",
-    "policy",
-    "OSSAccessKeyId",
-    "accessid",
-    "accessId",
-    "signature",
-    "success_action_status",
-    "callback",
-    "x-oss-security-token",
-    "securityToken",
-    "token",
-    "dir",
-    "fileName",
-    "file_name",
-  ];
-
-  const form = new FormData();
-
-  for (const key of knownFieldNames) {
-    const value = findValueByKeys(result, [key]);
-
-    if (value !== null && value !== undefined) {
-      form.append(key, value);
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === "object") {
+      const found = findValueByKeys(value, keys);
+      if (found) return found;
     }
   }
 
-  form.append(fileFieldName, fs.createReadStream(filePath), {
-    filename: path.basename(filePath),
-    contentType: "application/pdf",
-  });
-
-  console.log("Signature alapú PDF upload próba...");
-  console.log("file field:", fileFieldName);
-
-  try {
-    const response = await axios.post(uploadUrl, form, {
-      headers: form.getHeaders(),
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-      timeout: 60000,
-    });
-
-    console.log("Signature upload válasz:");
-    console.log(JSON.stringify(response.data, null, 2));
-
-    return response.data;
-  } catch (error) {
-    console.log("Signature upload hiba:");
-
-    if (error.response) {
-      console.log("HTTP status:", error.response.status);
-      console.log(error.response.data);
-    } else {
-      console.log(error.message);
-    }
-
-    return null;
-  }
+  return null;
 }
 
-function buildUploadReturnLabelPayloadVariants(fileValue, returnWarehouseId, pdfBase64) {
+function buildUploadReturnLabelPayloadVariants({
+  returnWarehouseId,
+  signature,
+  pdfBase64,
+}) {
+  const fileName = path.basename(PDF_PATH);
+
   return [
     {
-      name: "variant_1_fileId_tracking_carrier_warehouse",
+      name: "variant_1_signature_fileContent_tracking_carrier",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         returnWarehouseId,
-        returnLabelFileId: fileValue,
+        signature,
         trackingNumber: RETURN_TRACKING_NUMBER,
         carrierName: RETURN_CARRIER_NAME,
+        fileName,
+        fileType: "pdf",
+        fileContent: pdfBase64,
       },
     },
     {
-      name: "variant_2_fileUrl_tracking_carrier_warehouse",
+      name: "variant_2_signature_returnLabelFile_object",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         returnWarehouseId,
-        returnLabelUrl: fileValue,
-        trackingNumber: RETURN_TRACKING_NUMBER,
-        carrierName: RETURN_CARRIER_NAME,
-      },
-    },
-    {
-      name: "variant_3_fileId_logistics_names",
-      payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        returnWarehouseId,
-        fileId: fileValue,
-        logisticsTrackingNumber: RETURN_TRACKING_NUMBER,
-        logisticsProviderName: RETURN_CARRIER_NAME,
-      },
-    },
-    {
-      name: "variant_4_returnLabelInfo_fileId",
-      payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        returnWarehouseId,
-        returnLabelInfo: {
-          fileId: fileValue,
-          trackingNumber: RETURN_TRACKING_NUMBER,
-          carrierName: RETURN_CARRIER_NAME,
-        },
-      },
-    },
-    {
-      name: "variant_5_returnLogisticsInfo",
-      payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        returnWarehouseId,
-        returnLogisticsInfo: {
-          returnLabelFileId: fileValue,
-          trackingNumber: RETURN_TRACKING_NUMBER,
-          carrierName: RETURN_CARRIER_NAME,
-        },
-      },
-    },
-    {
-      name: "variant_6_base64_direct_returnLabelFile",
-      payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        returnWarehouseId,
+        signature,
         trackingNumber: RETURN_TRACKING_NUMBER,
         carrierName: RETURN_CARRIER_NAME,
         returnLabelFile: {
-          fileName: path.basename(PDF_PATH),
+          fileName,
           fileType: "pdf",
           fileContent: pdfBase64,
         },
       },
     },
     {
-      name: "variant_7_base64_direct_fileContent",
+      name: "variant_3_uploadSignature_returnLabelFile_object",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         returnWarehouseId,
+        uploadSignature: signature,
         trackingNumber: RETURN_TRACKING_NUMBER,
         carrierName: RETURN_CARRIER_NAME,
-        fileName: path.basename(PDF_PATH),
-        fileType: "pdf",
-        fileContent: pdfBase64,
+        returnLabelFile: {
+          fileName,
+          fileType: "pdf",
+          fileContent: pdfBase64,
+        },
       },
     },
     {
-      name: "variant_8_tracking_only_no_pdf",
+      name: "variant_4_returnLabelSignature_returnLabelFile_object",
       payload: {
         parentOrderSn: PARENT_ORDER_SN,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         returnWarehouseId,
+        returnLabelSignature: signature,
         trackingNumber: RETURN_TRACKING_NUMBER,
         carrierName: RETURN_CARRIER_NAME,
+        returnLabelFile: {
+          fileName,
+          fileType: "pdf",
+          fileContent: pdfBase64,
+        },
+      },
+    },
+    {
+      name: "variant_5_signature_labelFile_tracking_carrier",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+        signature,
+        trackingNumber: RETURN_TRACKING_NUMBER,
+        carrierName: RETURN_CARRIER_NAME,
+        labelFile: {
+          fileName,
+          fileType: "pdf",
+          fileContent: pdfBase64,
+        },
+      },
+    },
+    {
+      name: "variant_6_signature_returnLogisticsInfo",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+        signature,
+        returnLogisticsInfo: {
+          trackingNumber: RETURN_TRACKING_NUMBER,
+          carrierName: RETURN_CARRIER_NAME,
+          returnLabelFile: {
+            fileName,
+            fileType: "pdf",
+            fileContent: pdfBase64,
+          },
+        },
+      },
+    },
+    {
+      name: "variant_7_signature_returnLabelInfo",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+        signature,
+        returnLabelInfo: {
+          trackingNumber: RETURN_TRACKING_NUMBER,
+          carrierName: RETURN_CARRIER_NAME,
+          fileName,
+          fileType: "pdf",
+          fileContent: pdfBase64,
+        },
+      },
+    },
+    {
+      name: "variant_8_signature_logisticsTrackingNumber_providerName",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+        signature,
+        logisticsTrackingNumber: RETURN_TRACKING_NUMBER,
+        logisticsProviderName: RETURN_CARRIER_NAME,
+        returnLabelFile: {
+          fileName,
+          fileType: "pdf",
+          fileContent: pdfBase64,
+        },
+      },
+    },
+    {
+      name: "variant_9_signature_trackingNo_logisticsCompany",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+        signature,
+        trackingNo: RETURN_TRACKING_NUMBER,
+        logisticsCompany: RETURN_CARRIER_NAME,
+        returnLabelFile: {
+          fileName,
+          fileType: "pdf",
+          fileContent: pdfBase64,
+        },
+      },
+    },
+    {
+      name: "variant_10_signature_waybillNo_carrier",
+      payload: {
+        parentOrderSn: PARENT_ORDER_SN,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        returnWarehouseId,
+        signature,
+        waybillNo: RETURN_TRACKING_NUMBER,
+        carrier: RETURN_CARRIER_NAME,
+        returnLabelFile: {
+          fileName,
+          fileType: "pdf",
+          fileContent: pdfBase64,
+        },
       },
     },
   ].map((variant) => {
@@ -344,35 +302,63 @@ function buildUploadReturnLabelPayloadVariants(fileValue, returnWarehouseId, pdf
       delete variant.payload.returnWarehouseId;
     }
 
-    if (!fileValue) {
-      delete variant.payload.returnLabelFileId;
-      delete variant.payload.returnLabelUrl;
-      delete variant.payload.fileId;
-
-      if (variant.payload.returnLabelInfo) {
-        delete variant.payload.returnLabelInfo.fileId;
-      }
-
-      if (variant.payload.returnLogisticsInfo) {
-        delete variant.payload.returnLogisticsInfo.returnLabelFileId;
-      }
-    }
-
     return variant;
   });
 }
 
-async function tryUploadReturnLabel(fileValue, returnWarehouseId, pdfBase64) {
-  const variants = buildUploadReturnLabelPayloadVariants(
-    fileValue,
+async function tryUploadReturnLabel({ returnWarehouseId, signature, pdfBase64 }) {
+  const variants = buildUploadReturnLabelPayloadVariants({
     returnWarehouseId,
-    pdfBase64
-  );
+    signature,
+    pdfBase64,
+  });
 
   for (const variant of variants) {
     console.log("Próba:", variant.name);
-    console.log("Payload:");
-    console.log(JSON.stringify(variant.payload, null, 2));
+    console.log("Payload preview:");
+    console.log(
+      JSON.stringify(
+        {
+          ...variant.payload,
+          fileContent: variant.payload.fileContent
+            ? `[base64 hossz: ${variant.payload.fileContent.length}]`
+            : undefined,
+          returnLabelFile: variant.payload.returnLabelFile
+            ? {
+                ...variant.payload.returnLabelFile,
+                fileContent: `[base64 hossz: ${variant.payload.returnLabelFile.fileContent.length}]`,
+              }
+            : undefined,
+          labelFile: variant.payload.labelFile
+            ? {
+                ...variant.payload.labelFile,
+                fileContent: `[base64 hossz: ${variant.payload.labelFile.fileContent.length}]`,
+              }
+            : undefined,
+          returnLogisticsInfo: variant.payload.returnLogisticsInfo
+            ? {
+                ...variant.payload.returnLogisticsInfo,
+                returnLabelFile: variant.payload.returnLogisticsInfo.returnLabelFile
+                  ? {
+                      ...variant.payload.returnLogisticsInfo.returnLabelFile,
+                      fileContent: `[base64 hossz: ${variant.payload.returnLogisticsInfo.returnLabelFile.fileContent.length}]`,
+                    }
+                  : undefined,
+              }
+            : undefined,
+          returnLabelInfo: variant.payload.returnLabelInfo
+            ? {
+                ...variant.payload.returnLabelInfo,
+                fileContent: variant.payload.returnLabelInfo.fileContent
+                  ? `[base64 hossz: ${variant.payload.returnLabelInfo.fileContent.length}]`
+                  : undefined,
+              }
+            : undefined,
+        },
+        null,
+        2
+      )
+    );
 
     try {
       const response = await callTemu(
@@ -451,115 +437,39 @@ async function main() {
 
   console.log("2. Temu aftersales signature lekérés...");
 
-  const signaturePayloadVariants = [
-    {
-      name: "signature_empty",
-      payload: {},
-    },
-    {
-      name: "signature_with_order",
-      payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-      },
-    },
-    {
-      name: "signature_with_file_info",
-      payload: {
-        parentOrderSn: PARENT_ORDER_SN,
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        fileName: path.basename(PDF_PATH),
-        fileType: "pdf",
-      },
-    },
-  ];
+  const signatureResponse = await callTemu("temu.aftersales.signature.get", {});
 
-  let signatureResponse = null;
+  console.log("Signature válasz:");
+  console.log(JSON.stringify(signatureResponse, null, 2));
+  console.log("----------");
 
-  for (const variant of signaturePayloadVariants) {
-    console.log("Signature próba:", variant.name);
-    console.log("Payload:");
-    console.log(JSON.stringify(variant.payload, null, 2));
+  const signature =
+    findValueByKeys(signatureResponse, [
+      "signature",
+      "uploadSignature",
+      "returnLabelSignature",
+    ]) || null;
 
-    const response = await callTemu(
-      "temu.aftersales.signature.get",
-      variant.payload
-    );
-
-    console.log("Signature válasz:");
-    console.log(JSON.stringify(response, null, 2));
-    console.log("----------");
-
-    if (isTemuSuccess(response)) {
-      signatureResponse = response;
-      break;
-    }
+  if (!signature) {
+    console.log("Nem találtam signature mezőt.");
+    return;
   }
 
-  let fileValue = null;
+  console.log("Talált signature:");
+  console.log(signature);
+  console.log("----------");
 
-  if (signatureResponse) {
-    console.log("3. Signature alapú PDF upload próba...");
+  console.log("3. Return label feltöltés próbája Temuba...");
 
-    const signatureUploadResponse = await uploadUsingSignatureResponse(
-      signatureResponse,
-      PDF_PATH
-    );
-
-    console.log("Signature upload végső válasz:");
-    console.log(JSON.stringify(signatureUploadResponse, null, 2));
-    console.log("----------");
-
-    fileValue =
-      findValueByKeys(signatureUploadResponse, [
-        "fileId",
-        "file_id",
-        "fileKey",
-        "file_key",
-        "fileUrl",
-        "file_url",
-        "url",
-        "uri",
-        "id",
-        "objectKey",
-        "object_key",
-      ]) || null;
-
-    if (!fileValue) {
-      fileValue =
-        findValueByKeys(signatureResponse, [
-          "fileId",
-          "file_id",
-          "fileKey",
-          "file_key",
-          "fileUrl",
-          "file_url",
-          "url",
-          "uri",
-          "id",
-          "objectKey",
-          "object_key",
-        ]) || null;
-    }
-
-    console.log("Talált file érték:", fileValue || "-");
-    console.log("----------");
-  } else {
-    console.log("Nem sikerült signature.get választ lekérni.");
-    console.log("----------");
-  }
-
-  console.log("4. Return label feltöltés próbája Temuba...");
-
-  const ok = await tryUploadReturnLabel(
-    fileValue,
+  const ok = await tryUploadReturnLabel({
     returnWarehouseId,
-    pdfBase64
-  );
+    signature,
+    pdfBase64,
+  });
 
   if (!ok) {
     console.log("Egyik feltöltési változat sem sikerült.");
-    console.log("A kimenetből a temu.aftersales.signature.get és upload.returnlabel válasz a döntő.");
+    console.log("Valószínűleg még a carrier mező pontos neve / carrier ID kell.");
   }
 }
 
