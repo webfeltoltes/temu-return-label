@@ -40,6 +40,7 @@ function makeSign(params, appSecret) {
   const sortedKeys = Object.keys(params)
     .filter((key) => {
       const value = params[key];
+
       return (
         key !== "sign" &&
         value !== undefined &&
@@ -101,7 +102,7 @@ function isSuccess(response) {
 }
 
 async function main() {
-  console.log("Temu return label upload - version + warehouse mező próbák");
+  console.log("Temu return label upload - aftersales signature próbák");
   console.log("parentOrderSn:", PARENT_ORDER_SN);
   console.log("parentAfterSalesSn:", PARENT_AFTER_SALES_SN);
   console.log("trackingNumber:", TRACKING_NUMBER);
@@ -122,9 +123,10 @@ async function main() {
 
   const publicBaseUrl = RETURN_LABEL_PUBLIC_BASE_URL.replace(/\/$/, "");
   const returnLabelUrl = `${publicBaseUrl}/${PDF_FILE_NAME}`;
+  const carrierIdNumber = Number(TEMU_PACKETA_CARRIER_ID);
 
   console.log("returnLabelUrl:", returnLabelUrl);
-  console.log("carrierId:", Number(TEMU_PACKETA_CARRIER_ID));
+  console.log("carrierId:", carrierIdNumber);
   console.log("----------");
 
   console.log("1. Return label prepare lekérés...");
@@ -157,149 +159,161 @@ async function main() {
   console.log("mallWarehouseId:", mallWarehouseId);
   console.log("----------");
 
+  console.log("1/b. Aftersales signature lekérés...");
+
+  const signatureResponse = await callTemu("temu.aftersales.signature.get", {
+    fileName: PDF_FILE_NAME,
+    fileType: "pdf",
+  });
+
+  console.log(JSON.stringify(signatureResponse, null, 2));
+  console.log("----------");
+
+  if (!isSuccess(signatureResponse)) {
+    console.log("Signature lekérés sikertelen.");
+    return;
+  }
+
+  const aftersalesSignature = signatureResponse?.result?.signature || null;
+
+  if (!aftersalesSignature) {
+    console.log("Nem kaptam aftersales signature értéket.");
+    return;
+  }
+
+  console.log(
+    "aftersalesSignature:",
+    aftersalesSignature.slice(0, 60) + "..."
+  );
+  console.log("----------");
+
   const logisticsWarehouseId = "WH-08329939107980321";
 
-  const carrierIdNumber = Number(TEMU_PACKETA_CARRIER_ID);
+  const baseDto = {
+    mallWarehouseId,
+    returnLabelUrl,
+    carrierId: carrierIdNumber,
+    trackingNumber: TRACKING_NUMBER,
+  };
+
+  const logisticsWarehouseDto = {
+    mallWarehouseId: logisticsWarehouseId,
+    returnLabelUrl,
+    carrierId: carrierIdNumber,
+    trackingNumber: TRACKING_NUMBER,
+  };
+
+  const nowMs = Date.now();
+  const in1DayMs = nowMs + 1 * 24 * 60 * 60 * 1000;
+  const in7DaysMs = nowMs + 7 * 24 * 60 * 60 * 1000;
 
   const uploadVariants = [
     {
-      name: "variant_1_base_pdf_only",
+      name: "variant_1_base_without_aftersales_signature",
       payload: {
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
-        returnLabelDTOList: [
-          {
-            mallWarehouseId,
-            returnLabelUrl,
-            carrierId: carrierIdNumber,
-            trackingNumber: TRACKING_NUMBER,
-          },
-        ],
+        returnLabelDTOList: [baseDto],
       },
     },
     {
-      name: "variant_2_base_pdf_only_with_version_v1",
+      name: "variant_2_top_level_signature",
+      payload: {
+        signature: aftersalesSignature,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [baseDto],
+      },
+    },
+    {
+      name: "variant_3_top_level_signature_with_version_v1",
       payload: {
         version: "V1",
+        signature: aftersalesSignature,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
-        returnLabelDTOList: [
-          {
-            mallWarehouseId,
-            returnLabelUrl,
-            carrierId: carrierIdNumber,
-            trackingNumber: TRACKING_NUMBER,
-          },
-        ],
+        returnLabelDTOList: [baseDto],
       },
     },
     {
-      name: "variant_3_base_pdf_only_with_version_1",
-      payload: {
-        version: "1",
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        parentOrderSn: PARENT_ORDER_SN,
-        returnLabelDTOList: [
-          {
-            mallWarehouseId,
-            returnLabelUrl,
-            carrierId: carrierIdNumber,
-            trackingNumber: TRACKING_NUMBER,
-          },
-        ],
-      },
-    },
-    {
-      name: "variant_4_returnWarehouseId_field",
+      name: "variant_4_signature_inside_dto",
       payload: {
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
         returnLabelDTOList: [
           {
-            returnWarehouseId: mallWarehouseId,
-            returnLabelUrl,
-            carrierId: carrierIdNumber,
-            trackingNumber: TRACKING_NUMBER,
+            ...baseDto,
+            signature: aftersalesSignature,
           },
         ],
       },
     },
     {
-      name: "variant_5_warehouseId_field",
+      name: "variant_5_fileSignature_top_level",
       payload: {
+        fileSignature: aftersalesSignature,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
-        returnLabelDTOList: [
-          {
-            warehouseId: mallWarehouseId,
-            returnLabelUrl,
-            carrierId: carrierIdNumber,
-            trackingNumber: TRACKING_NUMBER,
-          },
-        ],
+        returnLabelDTOList: [baseDto],
       },
     },
     {
-      name: "variant_6_mallWarehouseId_and_returnWarehouseId",
+      name: "variant_6_uploadSignature_top_level",
       payload: {
+        uploadSignature: aftersalesSignature,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
-        returnLabelDTOList: [
-          {
-            mallWarehouseId,
-            returnWarehouseId: mallWarehouseId,
-            returnLabelUrl,
-            carrierId: carrierIdNumber,
-            trackingNumber: TRACKING_NUMBER,
-          },
-        ],
+        returnLabelDTOList: [baseDto],
       },
     },
     {
-      name: "variant_7_mallWarehouseId_and_warehouseId",
+      name: "variant_7_returnLabelSignature_top_level",
       payload: {
+        returnLabelSignature: aftersalesSignature,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
-        returnLabelDTOList: [
-          {
-            mallWarehouseId,
-            warehouseId: mallWarehouseId,
-            returnLabelUrl,
-            carrierId: carrierIdNumber,
-            trackingNumber: TRACKING_NUMBER,
-          },
-        ],
+        returnLabelDTOList: [baseDto],
       },
     },
     {
-      name: "variant_8_logistics_warehouse_id",
+      name: "variant_8_labelSignature_top_level",
       payload: {
+        labelSignature: aftersalesSignature,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
-        returnLabelDTOList: [
-          {
-            mallWarehouseId: logisticsWarehouseId,
-            returnLabelUrl,
-            carrierId: carrierIdNumber,
-            trackingNumber: TRACKING_NUMBER,
-          },
-        ],
+        returnLabelDTOList: [baseDto],
       },
     },
     {
-      name: "variant_9_logistics_warehouse_id_with_version_v1",
+      name: "variant_9_pickup_mode_3_with_signature",
       payload: {
-        version: "V1",
+        signature: aftersalesSignature,
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
-        returnLabelDTOList: [
-          {
-            mallWarehouseId: logisticsWarehouseId,
-            returnLabelUrl,
-            carrierId: carrierIdNumber,
-            trackingNumber: TRACKING_NUMBER,
-          },
-        ],
+        pickUpTimeScheduleMode: 3,
+        latestTimestamp: in7DaysMs,
+        returnLabelDTOList: [baseDto],
+      },
+    },
+    {
+      name: "variant_10_pickup_mode_1_with_signature",
+      payload: {
+        signature: aftersalesSignature,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        pickUpTimeScheduleMode: 1,
+        startTimestamp: in1DayMs,
+        endTimestamp: in7DaysMs,
+        returnLabelDTOList: [baseDto],
+      },
+    },
+    {
+      name: "variant_11_logistics_warehouse_with_signature",
+      payload: {
+        signature: aftersalesSignature,
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [logisticsWarehouseDto],
       },
     },
   ];
