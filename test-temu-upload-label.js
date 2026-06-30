@@ -22,15 +22,7 @@ const TRACKING_NUMBER = "Z3016356633";
 const PDF_FILE_NAME =
   "PO-090-12329685781113212-3016356633-A7_on_A7.pdf";
 
-const CERTIFICATE_IMAGE_FILE_NAME =
-  "PO-090-12329685781113212-3016356633-A7_on_A7.png";
-
 const PDF_PATH = path.join(__dirname, "labels", PDF_FILE_NAME);
-const CERTIFICATE_IMAGE_PATH = path.join(
-  __dirname,
-  "labels",
-  CERTIFICATE_IMAGE_FILE_NAME
-);
 
 function signValue(value) {
   if (value === undefined || value === null || value === "") {
@@ -48,7 +40,12 @@ function makeSign(params, appSecret) {
   const sortedKeys = Object.keys(params)
     .filter((key) => {
       const value = params[key];
-      return key !== "sign" && value !== undefined && value !== null && value !== "";
+      return (
+        key !== "sign" &&
+        value !== undefined &&
+        value !== null &&
+        value !== ""
+      );
     })
     .sort();
 
@@ -104,22 +101,15 @@ function isSuccess(response) {
 }
 
 async function main() {
-  console.log("Temu return label upload - PNG certificate verzió");
+  console.log("Temu return label upload - version + warehouse mező próbák");
   console.log("parentOrderSn:", PARENT_ORDER_SN);
   console.log("parentAfterSalesSn:", PARENT_AFTER_SALES_SN);
   console.log("trackingNumber:", TRACKING_NUMBER);
   console.log("PDF:", PDF_PATH);
-  console.log("Certificate image:", CERTIFICATE_IMAGE_PATH);
   console.log("----------");
 
   if (!fs.existsSync(PDF_PATH)) {
     throw new Error(`Nem találom a PDF-et: ${PDF_PATH}`);
-  }
-
-  if (!fs.existsSync(CERTIFICATE_IMAGE_PATH)) {
-    throw new Error(
-      `Nem találom a PNG certificate képet: ${CERTIFICATE_IMAGE_PATH}`
-    );
   }
 
   if (!RETURN_LABEL_PUBLIC_BASE_URL) {
@@ -131,13 +121,9 @@ async function main() {
   }
 
   const publicBaseUrl = RETURN_LABEL_PUBLIC_BASE_URL.replace(/\/$/, "");
-
   const returnLabelUrl = `${publicBaseUrl}/${PDF_FILE_NAME}`;
-  const pickUpCertificateImageUrl =
-    `${publicBaseUrl}/${CERTIFICATE_IMAGE_FILE_NAME}`;
 
   console.log("returnLabelUrl:", returnLabelUrl);
-  console.log("pickUpCertificateImageUrl:", pickUpCertificateImageUrl);
   console.log("carrierId:", Number(TEMU_PACKETA_CARRIER_ID));
   console.log("----------");
 
@@ -173,24 +159,7 @@ async function main() {
 
   const logisticsWarehouseId = "WH-08329939107980321";
 
-  const baseDtoNumberCarrier = {
-    mallWarehouseId,
-    returnLabelUrl,
-    carrierId: Number(TEMU_PACKETA_CARRIER_ID),
-    trackingNumber: TRACKING_NUMBER,
-  };
-
-  const baseDtoWithPngCertificate = {
-    mallWarehouseId,
-    pickUpCertificateImageUrl,
-    returnLabelUrl,
-    carrierId: Number(TEMU_PACKETA_CARRIER_ID),
-    trackingNumber: TRACKING_NUMBER,
-  };
-
-  const nowMs = Date.now();
-  const in1DayMs = nowMs + 1 * 24 * 60 * 60 * 1000;
-  const in7DaysMs = nowMs + 7 * 24 * 60 * 60 * 1000;
+  const carrierIdNumber = Number(TEMU_PACKETA_CARRIER_ID);
 
   const uploadVariants = [
     {
@@ -198,64 +167,136 @@ async function main() {
       payload: {
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
-        returnLabelDTOList: [baseDtoNumberCarrier],
-      },
-    },
-    {
-      name: "variant_2_png_certificate",
-      payload: {
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        parentOrderSn: PARENT_ORDER_SN,
-        returnLabelDTOList: [baseDtoWithPngCertificate],
-      },
-    },
-    {
-      name: "variant_3_pickup_mode_3_latest_ms_with_png_certificate",
-      payload: {
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        parentOrderSn: PARENT_ORDER_SN,
-        pickUpTimeScheduleMode: 3,
-        latestTimestamp: in7DaysMs,
-        returnLabelDTOList: [baseDtoWithPngCertificate],
-      },
-    },
-    {
-      name: "variant_4_pickup_mode_1_start_end_ms_with_png_certificate",
-      payload: {
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        parentOrderSn: PARENT_ORDER_SN,
-        pickUpTimeScheduleMode: 1,
-        startTimestamp: in1DayMs,
-        endTimestamp: in7DaysMs,
-        returnLabelDTOList: [baseDtoWithPngCertificate],
-      },
-    },
-    {
-      name: "variant_5_logistics_warehouse_id_pdf_only",
-      payload: {
-        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
-        parentOrderSn: PARENT_ORDER_SN,
         returnLabelDTOList: [
           {
-            mallWarehouseId: logisticsWarehouseId,
+            mallWarehouseId,
             returnLabelUrl,
-            carrierId: Number(TEMU_PACKETA_CARRIER_ID),
+            carrierId: carrierIdNumber,
             trackingNumber: TRACKING_NUMBER,
           },
         ],
       },
     },
     {
-      name: "variant_6_logistics_warehouse_id_with_png_certificate",
+      name: "variant_2_base_pdf_only_with_version_v1",
+      payload: {
+        version: "V1",
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [
+          {
+            mallWarehouseId,
+            returnLabelUrl,
+            carrierId: carrierIdNumber,
+            trackingNumber: TRACKING_NUMBER,
+          },
+        ],
+      },
+    },
+    {
+      name: "variant_3_base_pdf_only_with_version_1",
+      payload: {
+        version: "1",
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [
+          {
+            mallWarehouseId,
+            returnLabelUrl,
+            carrierId: carrierIdNumber,
+            trackingNumber: TRACKING_NUMBER,
+          },
+        ],
+      },
+    },
+    {
+      name: "variant_4_returnWarehouseId_field",
+      payload: {
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [
+          {
+            returnWarehouseId: mallWarehouseId,
+            returnLabelUrl,
+            carrierId: carrierIdNumber,
+            trackingNumber: TRACKING_NUMBER,
+          },
+        ],
+      },
+    },
+    {
+      name: "variant_5_warehouseId_field",
+      payload: {
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [
+          {
+            warehouseId: mallWarehouseId,
+            returnLabelUrl,
+            carrierId: carrierIdNumber,
+            trackingNumber: TRACKING_NUMBER,
+          },
+        ],
+      },
+    },
+    {
+      name: "variant_6_mallWarehouseId_and_returnWarehouseId",
+      payload: {
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [
+          {
+            mallWarehouseId,
+            returnWarehouseId: mallWarehouseId,
+            returnLabelUrl,
+            carrierId: carrierIdNumber,
+            trackingNumber: TRACKING_NUMBER,
+          },
+        ],
+      },
+    },
+    {
+      name: "variant_7_mallWarehouseId_and_warehouseId",
+      payload: {
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [
+          {
+            mallWarehouseId,
+            warehouseId: mallWarehouseId,
+            returnLabelUrl,
+            carrierId: carrierIdNumber,
+            trackingNumber: TRACKING_NUMBER,
+          },
+        ],
+      },
+    },
+    {
+      name: "variant_8_logistics_warehouse_id",
       payload: {
         parentAfterSalesSn: PARENT_AFTER_SALES_SN,
         parentOrderSn: PARENT_ORDER_SN,
         returnLabelDTOList: [
           {
             mallWarehouseId: logisticsWarehouseId,
-            pickUpCertificateImageUrl,
             returnLabelUrl,
-            carrierId: Number(TEMU_PACKETA_CARRIER_ID),
+            carrierId: carrierIdNumber,
+            trackingNumber: TRACKING_NUMBER,
+          },
+        ],
+      },
+    },
+    {
+      name: "variant_9_logistics_warehouse_id_with_version_v1",
+      payload: {
+        version: "V1",
+        parentAfterSalesSn: PARENT_AFTER_SALES_SN,
+        parentOrderSn: PARENT_ORDER_SN,
+        returnLabelDTOList: [
+          {
+            mallWarehouseId: logisticsWarehouseId,
+            returnLabelUrl,
+            carrierId: carrierIdNumber,
             trackingNumber: TRACKING_NUMBER,
           },
         ],
